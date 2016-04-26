@@ -1,6 +1,7 @@
 #include <emmintrin.h>
 #include <sys/time.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 int find(int);
 int uni(int,int);
@@ -8,9 +9,15 @@ int uni(int,int);
 int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
+/*
 int i,j,k,a,b,u,v,ne=1;
 int min,mincost=0,parent[9];
-
+*/
+typedef struct graph{
+	int* array;
+	int numVert;
+	int numEdges;	
+} Graph;
 
 struct timeval start, end;
 
@@ -25,32 +32,36 @@ void endtime(const char* c) {
 }
 
 // GPU function to square root values
-__global__ void gpu_sqrt(float* a, int N) {
+__global__ void parallelMergeSort(int* array) {
    //int element = blockIdx.x*blockDim.x + threadIdx.x;
    //if (element < N) a[element] = sqrt(a[element]);
 }
 
-void gpu(int* array[], int n) {
+void gpu(int array[], int n) {
+	//char allocatedVertices[n];
    //int numThreads = 1024;
    //int numBlocks = N / 1024 + 1;
 
    //float* gpuA;
-   //cudaMalloc(&gpuA, N*sizeof(float));
-   //cudaMemcpy(gpuA, a, N*sizeof(float), cudaMemcpyHostToDevice);
+   //int* gpuArray;
+   //cudaMalloc(allocatedVertices, n*sizeof(char));
+   //cudaMalloc(gpuArray, n*n*sizeof(int));
+   //cudaMemcpy(gpuArray, array, n*n*sizeof(int), cudaMemcpyHostToDevice);
    //gpu_sqrt<<<numBlocks, numThreads>>>(gpuA, N);
    //cudaMemcpy(a, gpuA, N*sizeof(float), cudaMemcpyDeviceToHost);
    //cudaFree(&gpuA);
 }
-                                                                                                                                                                                               
- 
+
+ /*
  int getWeight(int array[],int row, int col, int n){
 	 return array[row*n + col];
  }
  
- int setWeight(int* array[],int row, int col, int n, int value){
+ void setWeight(int* array[],int row, int col, int n, int value){
 	 (*array)[row*n + col] = value;
  }
-
+ */
+/*
 void normal(int* array[], int n)
 {	
 	printf("\n\tImplementation of Kruskal's algorithm non parallelized\n");
@@ -101,22 +112,72 @@ int uni(int i,int j)
 	}
 	return 0;
 }
+*/
 
+/*
+	This generates a graph randomly. The array goes in the format ||V1|V2|weight||V2|V3|weight||...||
+*/
+Graph* genGraph(int numEdges, int numVert,unsigned int seed, int maxWeight){
+	int* array = (int*)malloc(sizeof(int)*numEdges*3);
+	Graph *graph;
+	graph = (Graph*)malloc(sizeof(Graph));
+	
+	graph -> array = array;
+	graph -> numEdges = numEdges;
+	graph -> numVert = numVert;
+	
+	int i,j;
+	
+	//generating seed
+	srand(seed);
+	
+	//assuring a complete graph
+	for(i = 0; i < numVert - 1; i++){
+		array[(i*3) + 0] = i;
+		array[(i*3) + 1] = i+1;
+		array[(i*3) + 2] = rand() % maxWeight;
+	}
+	
+	int firstVert, secondVert;
+	
+	//randomly inserting edges
+	for( j = i; j < numEdges; j++){
+		firstVert = rand() % numVert;
+		array[(j*3) + 0] = firstVert;
+		
+		while((secondVert = rand() % numVert) == firstVert);
+			
+		array[(j*3) + 1] = secondVert;
+		array[(j*3) + 2] = rand() % maxWeight;
+	}
+	
+	return graph;
+	
+	
+}
+/*
+	Printing the nodes of the graph as a test
+*/
+void printGraph(Graph* graph){
+	int numEdges = graph -> numEdges;
+	int i;
+	
+	int* array = (graph -> array);
+	
+	for(i =0; i < numEdges ;i++){
+		printf("%d-%d: %d\n",array[(i*3) + 0],array[(i*3) + 1],array[(i*3) + 2]);
+	}
+}
 int main()                                                                                                                                                                                  
-{           
-	//dimension of the adjacency matrix nxn
-	int n = 3;
+{         
+	time_t t;
+	Graph* theGraph;
+	theGraph = genGraph(8,5,(unsigned) time(&t),100);
 	
-	//size of the array;
-	int size = n * n;
+	printGraph(theGraph);	
 	
-	//adjacency matrix in 1d array
-	int array[size];
-	
-	init(&a,n);
-	
-	normal(&a,n);
-	gpu(&a,n);
+	//normal(&a,n);
+	//gpu(a,n);
 
   return 0;
 }
