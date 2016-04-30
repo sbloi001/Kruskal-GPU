@@ -13,10 +13,16 @@ int setWeight(int* array[],int row, int col, int n, int value);
 int i,j,k,a,b,u,v,ne=1;
 int min,mincost=0,parent[9];
 */
+typedef struct edge{
+	int orig;
+	int dest;
+	int weight;
+}Edge;
+
 typedef struct graph{
-	int* array;
 	int numVert;
-	int numEdges;	
+	int numEdges;
+	Edge edges[];
 } Graph;
 
 struct timeval start, end;
@@ -32,12 +38,15 @@ void endtime(const char* c) {
 }
 
 // GPU function to square root values
-__global__ void parallelMergeSort(int* array) {
+__global__ void parallelMergeSort(int size) {
+	int startingPos = threadIdx.x * size * 3;
+	int finalPos = startingPos + size * 3;
    //int element = blockIdx.x*blockDim.x + threadIdx.x;
    //if (element < N) a[element] = sqrt(a[element]);
 }
 
-void gpu(int array[], int n) {
+void gpu(Graph ** graph) {
+	char* allocatedVertices = (char*)malloc(sizeof(char)* ((*graph) -> numVert));
 	//char allocatedVertices[n];
    //int numThreads = 1024;
    //int numBlocks = N / 1024 + 1;
@@ -117,20 +126,31 @@ int uni(int i,int j)
 /*
 	This generates a graph randomly. The array goes in the format ||V1|V2|weight||V2|V3|weight||...||
 */
-Graph* genGraph(int numEdges, int numVert,unsigned int seed, int maxWeight){
-	int* array = (int*)malloc(sizeof(int)*numEdges*3);
+Graph* genGraph(int numVert,unsigned int seed, int maxWeight){
+	int numEdges = ((numVert * (numVert - 1))/2);
 	Graph *graph;
-	graph = (Graph*)malloc(sizeof(Graph));
+	graph = (Graph*)malloc(sizeof(Graph) +  numEdges*sizeof(Edge));
 	
-	graph -> array = array;
 	graph -> numEdges = numEdges;
 	graph -> numVert = numVert;
 	
-	int i,j;
+	int i,j,edgeNumber = 0;
 	
 	//generating seed
 	srand(seed);
 	
+	for(i = 0; i < numVert - 1; i++){
+		for(j = i + 1; j< numVert;j++){
+			Edge* edge = (Edge*)malloc(sizeof(Edge));
+			edge -> orig = i;
+			edge -> dest = j;
+			edge -> weight = rand() % maxWeight;
+			(graph -> edges)[edgeNumber] = (*edge);
+			edgeNumber++;
+		}
+	}
+	
+	/*
 	//assuring a complete graph
 	for(i = 0; i < numVert - 1; i++){
 		array[(i*3) + 0] = i;
@@ -150,7 +170,7 @@ Graph* genGraph(int numEdges, int numVert,unsigned int seed, int maxWeight){
 		array[(j*3) + 1] = secondVert;
 		array[(j*3) + 2] = rand() % maxWeight;
 	}
-	
+	*/
 	return graph;
 	
 	
@@ -161,20 +181,51 @@ Graph* genGraph(int numEdges, int numVert,unsigned int seed, int maxWeight){
 void printGraph(Graph* graph){
 	int numEdges = graph -> numEdges;
 	int i;
-	
-	int* array = (graph -> array);
-	
+
 	for(i =0; i < numEdges ;i++){
-		printf("%d-%d: %d\n",array[(i*3) + 0],array[(i*3) + 1],array[(i*3) + 2]);
+		printf("%d-%d: %d\n",(graph -> edges)[i].orig,(graph -> edges)[i].dest, (graph -> edges)[i].weight);
 	}
 }
+
+void dimensioning(Graph* graph, int* array[][],int maxWeight){
+	int numEdges = graph -> numEdges;
+	
+	int i;
+	
+	for(i = 0; i < numEdges; i++){
+		int orig = (graph -> edges)[i].orig;
+		int dest = (graph -> edges)[i].dest;
+		int weight = (graph -> edges)[i].weight;
+		(*array)[orig][dest] = weight;
+		(*array)[dest][orig] = weight;
+		(*array)[orig][orig] = maxWeight + 1;
+		
+	}
+}
+
+void print2DArray(int array[][], int numVert){
+	int i,j;
+	
+	for(i = 0; i < numVert; i++){
+		for(j = 0; j < numVert; j++){
+			printf("%d-%d: %d\n",i,j,(array)[i][j]);
+		}
+	}
+}
+
 int main()                                                                                                                                                                                  
 {         
 	time_t t;
 	Graph* theGraph;
-	theGraph = genGraph(8,5,(unsigned) time(&t),100);
+	theGraph = genGraph(5,(unsigned) time(&t),100);
 	
-	printGraph(theGraph);	
+	int theArray[theGraph -> numVert][theGraph -> numVert];
+	dimensioning(theGraph,&theArray,100);
+	
+	printGraph(theGraph);
+	
+	printf("==============================================\n");
+	print2DArray(theArray,theGraph -> numVert);	
 	
 	//normal(&a,n);
 	//gpu(a,n);
