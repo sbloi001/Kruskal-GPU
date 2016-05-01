@@ -9,6 +9,8 @@ int uni(int,int);
 int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
+#define MAX_WEIGHT  100
+#define MAX_VERTICES  20
 /*
 int i,j,k,a,b,u,v,ne=1;
 int min,mincost=0,parent[9];
@@ -126,7 +128,7 @@ int uni(int i,int j)
 /*
 	This generates a graph randomly. The array goes in the format ||V1|V2|weight||V2|V3|weight||...||
 */
-Graph* genGraph(int numVert,unsigned int seed, int maxWeight){
+Graph* genGraph(int numVert,unsigned int seed){
 	int numEdges = ((numVert * (numVert - 1))/2);
 	Graph *graph;
 	graph = (Graph*)malloc(sizeof(Graph) +  numEdges*sizeof(Edge));
@@ -139,12 +141,12 @@ Graph* genGraph(int numVert,unsigned int seed, int maxWeight){
 	//generating seed
 	srand(seed);
 	
-	for(i = 0; i < numVert - 1; i++){
-		for(j = i + 1; j< numVert;j++){
+	for(i = 1; i <= numVert - 1; i++){
+		for(j = i + 1; j<= numVert;j++){
 			Edge* edge = (Edge*)malloc(sizeof(Edge));
 			edge -> orig = i;
 			edge -> dest = j;
-			edge -> weight = rand() % maxWeight;
+			edge -> weight = (rand() % MAX_WEIGHT) + 1;
 			(graph -> edges)[edgeNumber] = (*edge);
 			edgeNumber++;
 		}
@@ -187,27 +189,11 @@ void printGraph(Graph* graph){
 	}
 }
 
-void dimensioning(Graph* graph, int* array[][],int maxWeight){
-	int numEdges = graph -> numEdges;
-	
-	int i;
-	
-	for(i = 0; i < numEdges; i++){
-		int orig = (graph -> edges)[i].orig;
-		int dest = (graph -> edges)[i].dest;
-		int weight = (graph -> edges)[i].weight;
-		(*array)[orig][dest] = weight;
-		(*array)[dest][orig] = weight;
-		(*array)[orig][orig] = maxWeight + 1;
-		
-	}
-}
-
-void print2DArray(int array[][], int numVert){
+void print2DArray(int array[][MAX_VERTICES], int numVert){
 	int i,j;
 	
-	for(i = 0; i < numVert; i++){
-		for(j = 0; j < numVert; j++){
+	for(i = 1; i <= numVert; i++){
+		for(j = 1; j <= numVert; j++){
 			printf("%d-%d: %d\n",i,j,(array)[i][j]);
 		}
 	}
@@ -217,10 +203,30 @@ int main()
 {         
 	time_t t;
 	Graph* theGraph;
-	theGraph = genGraph(5,(unsigned) time(&t),100);
+	theGraph = genGraph(3,(unsigned) time(&t));
+
 	
-	int theArray[theGraph -> numVert][theGraph -> numVert];
-	dimensioning(theGraph,&theArray,100);
+	int numVert = theGraph -> numVert;
+	int numEdges = theGraph -> numEdges;
+	int theArray[MAX_VERTICES][MAX_VERTICES];
+	
+	int i;
+	
+	//filling the 2D array with the values of the Edges
+	//creating a symetric matrix
+	for(i = 0; i < numEdges; i++){
+		int orig = (theGraph -> edges)[i].orig;
+		int dest = (theGraph -> edges)[i].dest;
+		int weight = (theGraph -> edges)[i].weight;
+		theArray[orig][dest] = weight;
+		theArray[dest][orig] = weight;
+	}
+	
+	//because the weights of the connection Vi - Vi dont matter
+	//the weight is more than the max
+	for(i = 1; i <= numVert; i++){
+		theArray[i][i] = MAX_WEIGHT + 1;
+	}
 	
 	printGraph(theGraph);
 	
