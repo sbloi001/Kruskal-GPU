@@ -11,10 +11,9 @@ int setWeight(int* array[],int row, int col, int n, int value);
 
 #define MAX_WEIGHT  100
 #define MAX_VERTICES  20
-/*
-int i,j,k,a,b,u,v,ne=1;
-int min,mincost=0,parent[9];
-*/
+
+int parent[MAX_VERTICES];
+
 typedef struct edge{
 	int orig;
 	int dest;
@@ -72,21 +71,21 @@ void gpu(Graph ** graph) {
 	 (*array)[row*n + col] = value;
  }
  */
-/*
-void normal(int* array[], int n)
-{	
-	printf("\n\tImplementation of Kruskal's algorithm non parallelized\n");
+
+void normal(int cost[MAX_VERTICES][MAX_VERTICES], int n)
+{
+	int i,j,k,a,b,u,v,ne=1;
+	int min,mincost=0;
 	
-	starttime();
 	while(ne < n)
 	{
 		for(i=1,min=999;i<=n;i++)
 		{
 			for(j=1;j <= n;j++)
 			{
-				if(getWeight((*array),i,j,n) < min)
+				if(cost[i][j] < min)
 				{
-					min=getWeight((*array),i,j,n);
+					min=cost[i][j];
 					a=u=i;
 					b=v=j;
 				}
@@ -99,14 +98,10 @@ void normal(int* array[], int n)
 			printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
 			mincost +=min;
 		}
-		setWeight(array,i,j,n,999);
-		setWeight(array,j,i,n,999);
+		cost[a][b]=cost[b][a]=999;
 	}
 	printf("\n\tMinimum cost = %d\n",mincost);
-	
-	endtime("CPU");
 }
-
 int find(int i)
 {
 	while(parent[i])
@@ -123,7 +118,7 @@ int uni(int i,int j)
 	}
 	return 0;
 }
-*/
+
 
 /*
 	This generates a graph randomly. The array goes in the format ||V1|V2|weight||V2|V3|weight||...||
@@ -152,27 +147,6 @@ Graph* genGraph(int numVert,unsigned int seed){
 		}
 	}
 	
-	/*
-	//assuring a complete graph
-	for(i = 0; i < numVert - 1; i++){
-		array[(i*3) + 0] = i;
-		array[(i*3) + 1] = i+1;
-		array[(i*3) + 2] = rand() % maxWeight;
-	}
-	
-	int firstVert, secondVert;
-	
-	//randomly inserting edges
-	for( j = i; j < numEdges; j++){
-		firstVert = rand() % numVert;
-		array[(j*3) + 0] = firstVert;
-		
-		while((secondVert = rand() % numVert) == firstVert);
-			
-		array[(j*3) + 1] = secondVert;
-		array[(j*3) + 2] = rand() % maxWeight;
-	}
-	*/
 	return graph;
 	
 	
@@ -233,6 +207,12 @@ int main()
 	printf("==============================================\n");
 	print2DArray(theArray,theGraph -> numVert);	
 	
+	
+	printf("==============================================\n");
+	printf("==============================================\n");
+	printf("Doing Normal\n");
+	
+	normal(theArray,numVert);
 	//normal(&a,n);
 	//gpu(a,n);
 
