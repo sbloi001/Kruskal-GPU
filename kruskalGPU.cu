@@ -40,14 +40,139 @@ void endtime(const char* c) {
 
 // GPU function to square root values
 __global__ void parallelMergeSort(int size) {
-	int startingPos = threadIdx.x * size * 3;
-	int finalPos = startingPos + size * 3;
+	//int startingPos = threadIdx.x * size * 3;
+	//int finalPos = startingPos + size * 3;
    //int element = blockIdx.x*blockDim.x + threadIdx.x;
    //if (element < N) a[element] = sqrt(a[element]);
 }
 
+
+__global__ void update(int *matrix, size_t pitch,int numVert,int reference){
+	int col = blockIdx.y * blockDim.y + (threadIdx.y + 1);	
+	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
+	int* row_ptr;
+	if((col <= numVert) && (row <= numVert) ){
+		if(col != reference){ //Avoiding writing to the reference column
+			row_ptr= (int*)((char*)matrix + row * pitch);
+			int value = row_ptr[reference];
+			
+			if(value == 1){//if the current row exists in the reference column set
+				row_ptr= (int*)((char*)matrix + col * pitch);
+				int exist = row_ptr[reference];
+				
+				if(exist == 1){
+					row_ptr= (int*)((char*)matrix + row * pitch);
+					row_ptr[col] = 1;
+				}
+			}
+		}
+	}
+	
+	 __syncthreads();
+}
+
+/*
+	This methods or 2 columns in the unionMatrix array. This 
+	garantees that both sets have the same values.
+*/
+__global__ void orCol(int *matrix,size_t pitch,int numVert,int firstVert,int secondVert){
+	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
+	if(row <= numVert){
+		
+		int* row_ptr = (int*)((char*)matrix + row * pitch);
+		
+		int firstValue = row_ptr[firstVert];
+		int secondValue = row_ptr[secondVert];
+		
+		if(firstValue == 1)
+			row_ptr[secondVert] = 1;
+		if(secondValue == 1)
+			row_ptr[firstVert] = 1;		
+		}
+		
+		 __syncthreads();
+}
+__global__ void checkSet(int* matrix,int* checkArray, size_t pitch, int numVert,int firstVert, int secondVert){
+
+	int col = blockIdx.x*blockDim.x + threadIdx.x + 1;;
+	
+	if((col <= numVert) && col != 0){
+		int* rowFirstVert = (int*)((char*)matrix + firstVert * pitch);
+		int firstValue = rowFirstVert[col];
+		
+		int* rowSecondVert = (int*)((char*)matrix + secondVert * pitch);
+		int secondValue = rowSecondVert[col];
+		
+		if((firstValue == 1) && (secondValue == 1)){
+			checkArray[col] = 1;
+		}	
+			
+	}
+	
+}
+
+void insert (int *matrix, size_t pitch,int numVert,int firstVert,int secondVert){
+	//update part
+	dim3 threadsPerBlock(1024,1024);
+	dim3 numBlocks(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
+	
+	//checking part
+	int numThreads_or = threadsPerBlock.x;
+	int numBlocks_or = numBlocks.x;
+	
+	//inserting values in the matrix
+	int* ptr = (int*)((char*)matrix + firstVert * pitch);
+	ptr[secondVert] = 1;
+	
+	ptr = (int*)((char*)matrix +secondVert * pitch);
+	ptr[firstVert] = 1;
+	
+	//updating the rest of the sets
+	orCol<<<numBlocks_or,numThreads_or>>>(matrix,pitch,numVert,1,2);
+	
+	update<<<numBlocks,threadsPerBlock>>>(matrix,pitch,numVert,1);	
+}
+
 void gpu(Graph ** graph) {
-	char* allocatedVertices = (char*)malloc(sizeof(char)* ((*graph) -> numVert));
+	int numVert = (*graph) -> numVert;
+	int* unionMatrix;
+	
+	int* checkArray;
+	size_t pitch;
+	
+	cudaMallocPitch(&unionMatrix, &pitch,
+                (numVert + 1) * sizeof(Edge), numVert + 1);
+	cudaMalloc(&checkArray, (numVert+1)*sizeof(int));
+	
+	int numThreads = 1024;
+	int numBlocks = numVert / numThreads + 1;
+	
+	int i, found = 0;
+	
+	for(;;){
+		checkSet<<<numBlocks,numThreads>>>(unionMatrix,checkArray,pitch,numVert,1,2);
+	
+		for(i = 1; i <= numVert; i++){
+			if(checkArray[i] == 1){
+				found = 1;
+			}
+			checkArray[i] = 0;
+		}
+		
+		if(found == 0){
+			insert(unionMatrix, pitch, numVert, 1,2);
+		}
+		
+		
+	}
+	
+	
+	
+	
+	
+	
+	
+	
 	//char allocatedVertices[n];
    //int numThreads = 1024;
    //int numBlocks = N / 1024 + 1;
@@ -74,7 +199,7 @@ void gpu(Graph ** graph) {
 
 void normal(int cost[MAX_VERTICES][MAX_VERTICES], int n)
 {
-	int i,j,k,a,b,u,v,ne=1;
+	int i,j,a,b,u,v,ne=1;
 	int min,mincost=0;
 	
 	while(ne < n)
