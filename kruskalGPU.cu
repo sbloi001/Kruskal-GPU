@@ -12,7 +12,7 @@ int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
 #define MAX_WEIGHT  100
-#define MAX_VERTICES  1000
+#define MAX_VERTICES  20
 
 int parent[MAX_VERTICES];
 
@@ -189,10 +189,15 @@ __global__ void reset(){
 __global__ void arrayCheck(int * array,int numVert){
 	int i;
 	
+	devFound = 0;
 	for(i = 1; i <= numVert;i++){
 		if(array[i] == 1){
 			devFound =1;
+			//printf("Found!\n`");
+		}else{
+			//printf("Not found!\n");
 		}
+		array[i] = 0;
 	}
 	/*
 	int pos = blockIdx.x * 	blockDim.x + threadIdx.x;
@@ -209,6 +214,8 @@ __global__ void insertResultingEdge(Edge* original, Edge* destination,int dest_p
 	Edge temp = (Edge)(*(original + orig_pos));
 
 	(*(destination + dest_pos)) = temp;
+	
+	__syncthreads();
 }
 
 __global__ void printEdges(Edge* edges,int n){
@@ -227,6 +234,7 @@ __global__ void printEdges(Edge* edges,int n){
 	}
 	
 	printf("\n\tMinimum cost = %d\n",min);
+	__syncthreads();
 }
 
 void gpu(Graph ** graph) {
@@ -279,7 +287,7 @@ void gpu(Graph ** graph) {
 	//__device__ int devFound;
 	
 	//cudaMemcpyToSymbol(devFound,&value,sizeof(int));
-	dim3 threadsPerBlock(16,16);
+	dim3 threadsPerBlock(4,4);
 	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
 		
 	//printf("Number of Blocks %d\n",numBlocks2D.x);	
@@ -466,7 +474,7 @@ int main()
 {         
 	time_t t;
 	Graph* theGraph;
-	theGraph = genGraph(20,(unsigned) time(&t));
+	theGraph = genGraph(10,(unsigned) time(&t));
 
 	
 	int numVert = theGraph -> numVert;
