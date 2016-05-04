@@ -2,6 +2,8 @@
 #include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <thrust/sort.h>
+#include <thrust/device_ptr.h>
 
 int find(int);
 int uni(int,int);
@@ -135,22 +137,49 @@ void insert (int *matrix, size_t pitch,int numVert,int firstVert,int secondVert)
 
 void gpu(Graph ** graph) {
 	int numVert = (*graph) -> numVert;
+	int numEdges = (*graph) -> numEdges;
 	int* unionMatrix;
 	
 	int* checkArray;
 	size_t pitch;
 	
+	int* d_weights;
+	int* h_weights = (int*)malloc(numEdges * sizeof(int));
+	Edge* h_edges = (Edge*)malloc(numEdges * sizeof(Edge));
+	Edge* d_edges;
+	//int N = 10;
+
+	cudaMalloc(&d_edges, numEdges * sizeof(Edge));
+	cudaMalloc(&d_weights, numEdges * sizeof(int));
+
 	cudaMallocPitch(&unionMatrix, &pitch,
                 (numVert + 1) * sizeof(Edge), numVert + 1);
 	cudaMalloc(&checkArray, (numVert+1)*sizeof(int));
+
+	cudaMemcpy(d_edges, (*graph) -> edges, numEdges * sizeof(Edge), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_weights, ((*graph) -> weights) -> weights , numEdges * sizeof(int), cudaMemcpyHostToDevice);
+
+	printf("Data transfered!\n");
+
+	thrust::device_ptr<Edge> t_edges(d_edges);
+	thrust::device_ptr<int> t_weights(d_weights);
+
+
+
+
+	thrust::sort_by_key( t_weights , t_weights + numEdges, t_edges);
+	
 	
 	int numThreads = 1024;
 	int numBlocks = numVert / numThreads + 1;
 	
-	int i, found = 0;
+	int i,j, found = 0;
 	
-	for(;;){
-		checkSet<<<numBlocks,numThreads>>>(unionMatrix,checkArray,pitch,numVert,1,2);
+	for(j = 0;j < numEdges;j++){
+		int firstVert = d_edges[j].orig;
+		int secondVert = d_edges[j].orig;
+		
+		checkSet<<<numBlocks,numThreads>>>(unionMatrix,checkArray,pitch,numVert,firstVert,secondVert);
 	
 		for(i = 1; i <= numVert; i++){
 			if(checkArray[i] == 1){
@@ -160,31 +189,26 @@ void gpu(Graph ** graph) {
 		}
 		
 		if(found == 0){
-			insert(unionMatrix, pitch, numVert, 1,2);
+			insert(unionMatrix, pitch, numVert, firstVert,secondVert);
+			printf("Inserted edge (%d,%d)\n",firstVert,secondVert);
+		}else{
+			printf("Omitted edge (%d,%d)\n",firstVert,secondVert);
 		}
 		
 		
 	}
 	
 	
+	cudaMemcpy(h_edges,d_edges, numEdges * sizeof(Edge), cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_weights ,d_weights, numEdges * sizeof(int), cudaMemcpyDeviceToHost);
 	
-	
-	
-	
-	
-	
-	//char allocatedVertices[n];
-   //int numThreads = 1024;
-   //int numBlocks = N / 1024 + 1;
-
-   //float* gpuA;
-   //int* gpuArray;
-   //cudaMalloc(allocatedVertices, n*sizeof(char));
-   //cudaMalloc(gpuArray, n*n*sizeof(int));
-   //cudaMemcpy(gpuArray, array, n*n*sizeof(int), cudaMemcpyHostToDevice);
-   //gpu_sqrt<<<numBlocks, numThreads>>>(gpuA, N);
-   //cudaMemcpy(a, gpuA, N*sizeof(float), cudaMemcpyDeviceToHost);
-   //cudaFree(&gpuA);
+	memcpy(((*graph) -> weights) -> weights, h_weights,numEdges * sizeof(int));
+	memcpy( ((*graph) -> edges) , h_edges,numEdges * sizeof(Edge));
+	 
+	cudaFree(d_weights); 
+	cudaFree(d_edges);
+	cudaFree(checkArray);
+	cudaFree(unionMatrix);
 }
 
  /*
