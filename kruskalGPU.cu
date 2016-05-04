@@ -16,6 +16,9 @@ int setWeight(int* array[],int row, int col, int n, int value);
 
 int parent[MAX_VERTICES];
 
+typedef struct weights{
+	int weights[]; 
+}Weights;
 typedef struct edge{
 	int orig;
 	int dest;
@@ -25,7 +28,11 @@ typedef struct edge{
 typedef struct graph{
 	int numVert;
 	int numEdges;
-	Edge edges[];
+	Weights* weights;
+	Edge edges[] ; 
+
+	
+	
 } Graph;
 
 struct timeval start, end;
