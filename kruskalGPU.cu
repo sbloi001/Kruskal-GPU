@@ -5,8 +5,8 @@
 #include <thrust/sort.h>
 #include <thrust/device_ptr.h>
 
-int find(int);
-int uni(int,int);
+int find(int*,int);
+int uni(int*,int,int);
 
 int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
@@ -14,7 +14,7 @@ int setWeight(int* array[],int row, int col, int n, int value);
 #define MAX_WEIGHT  100
 #define MAX_VERTICES  20
 
-int parent[MAX_VERTICES];
+
 
 typedef struct weights{
 	int weights[]; 
@@ -237,49 +237,80 @@ __global__ void printEdges(Edge* edges,int n){
 	__syncthreads();
 }
 
-void gpu(Graph ** graph) {
-	int numVert = (*graph) -> numVert;
-	int numEdges = (*graph) -> numEdges;
-	int* unionMatrix;
+__global__ void adjustGraph(unsigned char* source, unsigned char* dest, int numVert){
+	int col = blockIdx.y * blockDim.y + (threadIdx.y + 1);	
+	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
+	
+	*(dest + (col - 1) * numVert + (row - 1)) = *(dest + (col * numVert + row));
+}
+
+__global__ void copyingGraphs(unsigned char* source, unsigned char* dest, int numVert){
+	int col = blockIdx.y * blockDim.y + (threadIdx.y + 1);	
+	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
+	
+	*(dest + col * numVert + row) = *(dest + (col * numVert + row));
+}
+
+
+void gpu(unsigned char** graph, int numVert) {	
+	int size_1 = (numVert + 1) * (numVert + 1);
+	int size = numVert * numVert;
+	int* unionMatrix;	
 	
 	int* checkArray;
-	size_t pitch;
 	
-	int* d_weights;
-	int* h_weights = (int*)malloc(numEdges * sizeof(int));
-	Edge* h_edges = (Edge*)malloc(numEdges* sizeof(Edge));
-	Edge* d_edges;
-	Edge* d_resultEdges;
-	//int N = 10;
-	int* vertList;
-
-
-	cudaMalloc(&d_edges, numEdges * sizeof(Edge));
-	cudaMalloc(&d_resultEdges, (numVert - 1) * sizeof(Edge));
-	cudaMalloc(&d_weights, numEdges * sizeof(int));
+	size_t pitch;	
+	
+	unsigned char* d_weights_1;
+	unsigned char* d_weights_original;
+	unsigned char* d_weights_copy;
+	
+	int* d_order;
+	
+	int* vertList; //it is gonna be only size 2.
+	
+	/****************************************************************************************
+	* Alocating memory in the device
+	*****************************************************************************************/
+	
+	cudaMalloc(&d_weights_1, size_1 * sizeof(unsigned char)); //this is  directly copy from the original array that contains numVert + 1 Rows and Cols
+	cudaMalloc(&d_weights_original, size * sizeof(unsigned char)); //Array without the extra cols and rows
+	cudaMalloc(&d_weights_copy, size * sizeof(unsigned char)); //Array that is gonna be used in the sort
+	
+	cudaMalloc(&d_order, size * sizeof(int));//would store a sorted array of number to keep track of the indexes to move
 	
 	cudaMalloc(&vertList,2 * sizeof(int));
-
+	
 	cudaMallocPitch(&unionMatrix, &pitch,
                 (numVert + 1) * sizeof(Edge), numVert + 1);
 	cudaMalloc(&checkArray, (numVert+1)*sizeof(int));
 
-	cudaMemcpy(d_edges, (*graph) -> edges, numEdges * sizeof(Edge), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_weights, ((*graph) -> weights) -> weights , numEdges * sizeof(int), cudaMemcpyHostToDevice);
-
-	//printf("Data transfered!\n");
-
-	thrust::device_ptr<Edge> t_edges(d_edges);
-	thrust::device_ptr<int> t_weights(d_weights);
-
-
-
-
-	thrust::sort_by_key( t_weights , t_weights + numEdges, t_edges);
 	
+	cudaMemcpy(d_weights_1, (*graph), size_1 * sizeof(unsigned char), cudaMemcpyHostToDevice);
 	
+	/****************************************************************************************
+	* End allocating Memory in the device
+	*****************************************************************************************/
 	int numThreads = 16;
 	int numBlocks = numVert / numThreads + 1;
+	
+	dim3 threadsPerBlock(500,500);
+	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
+	
+	adjustGraph<<<numBlocks2D,threadsPerBlock>>>(d_weights_1, d_weights_original, numVert);
+	copyingGraphs<<<numBlocks2D,threadsPerBlock>>>(d_weights_original, d_weights_copy, numVert);
+	/****************************************************************************************
+	* Sorting Section
+	*****************************************************************************************/
+	
+	thrust::device_ptr<unsigned char> t_weight_copy(d_weights_copy);
+	thrust::device_ptr<int> t_order(d_order);
+
+	thrust::sort_by_key( t_weights_copy , t_weights_copy + size, t_order);
+	
+	/****************************************************************************************
+	* End Sorting
+	*****************************************************************************************/
 	
 	int j; 
 	typeof(devFound) found;
@@ -287,8 +318,7 @@ void gpu(Graph ** graph) {
 	//__device__ int devFound;
 	
 	//cudaMemcpyToSymbol(devFound,&value,sizeof(int));
-	dim3 threadsPerBlock(4,4);
-	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
+	
 		
 	//printf("Number of Blocks %d\n",numBlocks2D.x);	
 	initializeUnionMatrix<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert);	
@@ -360,44 +390,51 @@ void gpu(Graph ** graph) {
  }
  */
 
-void normal(int cost[MAX_VERTICES][MAX_VERTICES], int n)
+void normal(unsigned char** cost, int n)
 {
+	int parent[n + 1];
+	
 	int i,j,a,b,u,v,ne=1;
-	int min,mincost=0;
+	int mincost=0;
+	unsigned char min;
+	//initializing the parent array to all be -1
+	for(i = 0; i <= n; i++){
+		parent[i] = 0;
+	}
 	
 	while(ne < n)
 	{
-		for(i=1,min=999;i<=n;i++)
+		for(i=1,min=MAX_WEIGHT;i<=n;i++)
 		{
 			for(j=1;j <= n;j++)
 			{
-				if(cost[i][j] < min)
+				if( (*( (*cost) + i * n + j ))< min)
 				{
-					min=cost[i][j];
+					min= (*( (*cost) + i * n + j ));
 					a=u=i;
 					b=v=j;
 				}
 			}
 		}
-		u=find(u);
-		v=find(v);
-		if(uni(u,v))
+		u=find(parent,u);
+		v=find(parent,v);
+		if(uni(parent,u,v))
 		{
 			printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
-			mincost +=min;
+			mincost += (int)min;
 		}
-		cost[a][b]=cost[b][a]=999;
+		 (*( (*cost) + a * n + b ))=(*( (*cost) + b * n + a ))=MAX_WEIGHT + 1;
 	}
 	printf("\n\tMinimum cost = %d\n",mincost);
 }
-int find(int i)
+int find(int* parent,int i)
 {
 	while(parent[i])
 	i=parent[i];
 	return i;
 }
 
-int uni(int i,int j)
+int uni(int* parent, int i,int j)
 {
 	if(i!=j)
 	{
@@ -411,42 +448,29 @@ int uni(int i,int j)
 /*
 	This generates a graph randomly. The array goes in the format ||V1|V2|weight||V2|V3|weight||...||
 */
-Graph* genGraph(int numVert,unsigned int seed){
-	int numEdges = ((numVert * (numVert - 1))/2);
-	Graph *graph;
-	graph = (Graph*)malloc(sizeof(Graph) +  numEdges*sizeof(Edge));
+unsigned char* genGraph(int numVert,unsigned int seed){
+	int total_size = (numVert + 1) * (numVert + 1);
+	unsigned char* graph = (unsigned char*)malloc(total_size * sizeof(char));
 	
-	Weights* weightsArray;	
-
-	weightsArray = (Weights*)malloc( sizeof(Weights) + numEdges*sizeof(int));
-
-	graph -> numEdges = numEdges;
-	graph -> numVert = numVert;
-	
-	int i,j,edgeNumber = 0;
-	
-	//generating seed
-	srand(seed);
+	int i,j;
 	
 	for(i = 1; i <= numVert - 1; i++){
 		for(j = i + 1; j<= numVert;j++){
-			Edge* edge = (Edge*)malloc(sizeof(Edge));
-			edge -> orig = i;
-			edge -> dest = j;
-			int temp = (rand() % MAX_WEIGHT) + 1;
-			edge -> weight = temp;
-			(graph -> edges)[edgeNumber] = (*edge);
-			(weightsArray -> weights)[edgeNumber] = temp ;
-			edgeNumber++;
+			unsigned char temp = (unsigned char)((rand() % MAX_WEIGHT) + 1);
+			(*(graph + i * numVert + j)) = temp;
+			(*(graph + j * numVert + i)) = temp;
 		}
 	}
 	
-	graph -> weights = weightsArray;
+	//diagonal more than the maximun weight
+	for(i = 1; i <= numVert; i++){
+		(*(graph + i * numVert + i)) = MAX_WEIGHT + 1;
+	}
 	
 	return graph;
 	
-	
 }
+
 /*
 	Printing the nodes of the graph as a test
 */
@@ -460,12 +484,12 @@ void printGraph(Graph* graph){
 }
 
 
-void print2DArray(int array[][MAX_VERTICES], int numVert){
+void print2DArray(unsigned char* array, int numVert){
 	int i,j;
 	
 	for(i = 1; i <= numVert; i++){
 		for(j = 1; j <= numVert; j++){
-			printf("%d-%d: %d\n",i,j,(array)[i][j]);
+			printf("%d-%d: %d\n",i,j,*(array + i*numVert +j));
 		}
 	}
 }
@@ -473,50 +497,27 @@ void print2DArray(int array[][MAX_VERTICES], int numVert){
 int main()                                                                                                                                                                                  
 {         
 	time_t t;
-	Graph* theGraph;
-	theGraph = genGraph(10,(unsigned) time(&t));
+	unsigned char* theGraph;
+	int numVert = 10;
+	theGraph = genGraph(numVert,(unsigned) time(&t));
 
 	
-	int numVert = theGraph -> numVert;
-	int numEdges = theGraph -> numEdges;
-	int theArray[MAX_VERTICES][MAX_VERTICES];
 	
-	int i;
-	
-	//filling the 2D array with the values of the Edges
-	//creating a symetric matrix
-	for(i = 0; i < numEdges; i++){
-		int orig = (theGraph -> edges)[i].orig;
-		int dest = (theGraph -> edges)[i].dest;
-		int weight = (theGraph -> edges)[i].weight;
-		theArray[orig][dest] = weight;
-		theArray[dest][orig] = weight;
-	}
-	
-	//because the weights of the connection Vi - Vi dont matter
-	//the weight is more than the max
-	for(i = 1; i <= numVert; i++){
-		theArray[i][i] = MAX_WEIGHT + 1;
-	}
-	
-	//printGraph(theGraph);
 	
 	printf("==============================================\n");
-	//print2DArray(theArray,theGraph -> numVert);	
+	print2DArray(theGraph,numVert);	
 	
 	
 	printf("==============================================\n");
 	printf("==============================================\n");
 	printf("Doing Normal\n");
 	
-	normal(theArray,numVert);
+	normal(&theGraph,numVert);
 	//normal(&a,n);
 	//gpu(a,n);
 	
-	printf("==============================================\n");
-	printf("==============================================\n");
-	printf("Doing GPU\n");
-	gpu(&theGraph);
+	
+	//gpu(&theGraph);
 	
 	//printGraph(theGraph);
 	
