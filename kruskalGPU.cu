@@ -11,7 +11,7 @@ int uni(int,int);
 int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
-#define MAX_WEIGHT  100
+#define MAX_WEIGHT  1000
 #define MAX_VERTICES  20
 
 int parent[MAX_VERTICES];
@@ -253,7 +253,7 @@ void gpu(Graph ** graph) {
 	//int N = 10;
 	int* vertList;
 
-
+    // starttime();
 	cudaMalloc(&d_edges, numEdges * sizeof(Edge));
 	cudaMalloc(&d_resultEdges, (numVert - 1) * sizeof(Edge));
 	cudaMalloc(&d_weights, numEdges * sizeof(int));
@@ -277,7 +277,8 @@ void gpu(Graph ** graph) {
 
 	thrust::sort_by_key( t_weights , t_weights + numEdges, t_edges);
 	
-	
+	//endtime("end of sort");
+
 	int numThreads = 16;
 	int numBlocks = numVert / numThreads + 1;
 	
@@ -291,52 +292,67 @@ void gpu(Graph ** graph) {
 	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
 		
 	//printf("Number of Blocks %d\n",numBlocks2D.x);	
+	//starttime();
 	initializeUnionMatrix<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert);	
 	//printGPUMatrix<<<1,1>>>(unionMatrix,numVert + 1);	
-	
+	//endtime("matrix initized");
 	//cudaMemcpyToSymbol(devFound, found,sizeof(int));
 	int counter = 0;
 	
-	for(j = 0;j < numEdges;j++){
+	for(j = 0;j < numEdges && counter < numVert ;j++){
 		getValue<<<1,1>>>(d_edges,j,vertList);
 
-		
+		//starttime();
+
 		checkSet<<<numBlocks,numThreads>>>(unionMatrix,checkArray,pitch,numVert,vertList);
-		
+		 
+		//endtime(" check set multi"); 
 		
 		/***************************************************************************************
 		* Inserting the node after it was checked that it didnt exist
 		****************************************************************************************/
 		//reset<<<1,1>>>();
+		//starttime();
 		arrayCheck<<<1,1>>>( checkArray,numVert);
+		//endtime(" array check");
 		
-		
+		//starttime();
         cudaMemcpyFromSymbol(&found, devFound, sizeof(found), 0, cudaMemcpyDeviceToHost);
-		
+		//endtime("cuda memcpy from symbol");
+
 		if(found == 0){
 			
+			//starttime();
 			insertResultingEdge<<<1,1>>>(d_edges,d_resultEdges,counter,j);
-			
+		    //endtime("insert resulting edge");	
+
 			counter++;
 			int numThreads_or = threadsPerBlock.x;
 			int numBlocks_or = numBlocks2D.x;
-		
+		    
+		    //starttime();
 			setValue<<<1,1>>>(unionMatrix,vertList, pitch);	
-		
+		    //endtime(" set value function");
 			//updating the rest of the sets
-			orCol<<<numBlocks_or,numThreads_or>>>(unionMatrix,pitch,numVert,vertList);
-		
-			//printGPUMatrix<<<1,1>>>(unionMatrix,numVert);	
 
+			//starttime();
+			orCol<<<numBlocks_or,numThreads_or>>>(unionMatrix,pitch,numVert,vertList);
+		    //endtime(" orCol function ");
+			//printGPUMatrix<<<1,1>>>(unionMatrix,numVert);	
+            
+            //starttime();
 			update<<<numBlocks,threadsPerBlock>>>(unionMatrix,pitch,numVert,vertList);	
-			
+			//endtime(" update fuction");
 		}
+
+
 		
 	}
 	
-	
+	//starttime();
 	printEdges<<<1,1>>>(d_resultEdges,numVert - 1);
-	
+	//endtime(" print edges ");
+
 	cudaMemcpy(h_edges,d_edges, numEdges * sizeof(Edge), cudaMemcpyDeviceToHost);
 	cudaMemcpy(h_weights ,d_weights, numEdges * sizeof(int), cudaMemcpyDeviceToHost);
 	
@@ -474,9 +490,9 @@ int main()
 {         
 	time_t t;
 	Graph* theGraph;
-	theGraph = genGraph(10,(unsigned) time(&t));
+	theGraph = genGraph(10000,(unsigned) time(&t));
 
-	
+	/*
 	int numVert = theGraph -> numVert;
 	int numEdges = theGraph -> numEdges;
 	int theArray[MAX_VERTICES][MAX_VERTICES];
@@ -498,7 +514,7 @@ int main()
 	for(i = 1; i <= numVert; i++){
 		theArray[i][i] = MAX_WEIGHT + 1;
 	}
-	
+	*/
 	//printGraph(theGraph);
 	
 	printf("==============================================\n");
@@ -507,17 +523,20 @@ int main()
 	
 	printf("==============================================\n");
 	printf("==============================================\n");
-	printf("Doing Normal\n");
+	//printf("Doing Normal\n");
 	
-	normal(theArray,numVert);
+	//normal(theArray,numVert);
 	//normal(&a,n);
 	//gpu(a,n);
+    printf("%s\n", "before kru's alg");
+	//printGraph(theGraph);
 	
 	printf("==============================================\n");
 	printf("==============================================\n");
-	printf("Doing GPU\n");
+	printf("Doing Kru on GPU\n");
+	starttime();
 	gpu(&theGraph);
-	
+	endtime(" total time ");
 	//printGraph(theGraph);
 	
   return 0;
