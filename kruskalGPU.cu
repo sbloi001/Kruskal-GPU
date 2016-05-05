@@ -11,8 +11,8 @@ int uni(int,int);
 int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
-#define MAX_WEIGHT  1000
-#define MAX_VERTICES  20
+#define MAX_WEIGHT  100
+#define MAX_VERTICES  1000
 
 int parent[MAX_VERTICES];
 
@@ -167,6 +167,7 @@ __global__ void initializeUnionMatrix(int * matrix,size_t pitch, int numVert){
 	if(row <= numVert && col <= numVert){
 		
 		if(row == col){
+
 			int* row_ptr= (int*)((char*)matrix + row * pitch);
 			//printf("working on col:%d row:%d VALUE:%d\n",col,row,1);
 			row_ptr[col] = 1;
@@ -399,7 +400,8 @@ void normal(int cost[MAX_VERTICES][MAX_VERTICES], int n)
 		v=find(v);
 		if(uni(u,v))
 		{
-			printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
+			ne++;
+			//printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
 			mincost +=min;
 		}
 		cost[a][b]=cost[b][a]=999;
@@ -490,7 +492,7 @@ int main()
 {         
 	time_t t;
 	Graph* theGraph;
-	theGraph = genGraph(10000,(unsigned) time(&t));
+	theGraph = genGraph(5000,(unsigned) time(&t));
 
 	/*
 	int numVert = theGraph -> numVert;
@@ -511,32 +513,42 @@ int main()
 	
 	//because the weights of the connection Vi - Vi dont matter
 	//the weight is more than the max
-	for(i = 1; i <= numVert; i++){
+	for(i = 1; i < numVert; i++){
 		theArray[i][i] = MAX_WEIGHT + 1;
 	}
 	*/
 	//printGraph(theGraph);
 	
-	printf("==============================================\n");
+	//printf("==============================================\n");
 	//print2DArray(theArray,theGraph -> numVert);	
 	
 	
 	printf("==============================================\n");
+	printf("%s\n", "   serial version  ");
 	printf("==============================================\n");
 	//printf("Doing Normal\n");
-	
+
+
+	//starttime();
 	//normal(theArray,numVert);
+	//endtime("serial version  ");
+
 	//normal(&a,n);
+	//
+
 	//gpu(a,n);
     printf("%s\n", "before kru's alg");
 	//printGraph(theGraph);
 	
 	printf("==============================================\n");
+	printf("%s\n","        parallel algorithm    " );
 	printf("==============================================\n");
 	printf("Doing Kru on GPU\n");
+
 	starttime();
 	gpu(&theGraph);
-	endtime(" total time ");
+	endtime(" parallel algorithm ");
+
 	//printGraph(theGraph);
 	
   return 0;
