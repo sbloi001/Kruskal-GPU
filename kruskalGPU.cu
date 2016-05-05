@@ -47,21 +47,13 @@ void endtime(const char* c) {
    printf("%s: %f ms\n", c, elapsed); 
 }
 
-// GPU function to square root values
-__global__ void parallelMergeSort(int size) {
-	//int startingPos = threadIdx.x * size * 3;
-	//int finalPos = startingPos + size * 3;
-   //int element = blockIdx.x*blockDim.x + threadIdx.x;
-   //if (element < N) a[element] = sqrt(a[element]);
-}
-
 
 __global__ void update(int *matrix, size_t pitch,int numVert,int * list){
 	int reference = (*(list+0));
-	int col = blockIdx.y * blockDim.y + (threadIdx.y + 1);	
-	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
+	int col = blockIdx.y * blockDim.y + (threadIdx.y );	
+	int row = blockIdx.x * blockDim.x + (threadIdx.x );
 	int* row_ptr;
-	if((col <= numVert) && (row <= numVert) ){
+	if((col < numVert) && (row <= numVert) ){
 		if(col != reference){ //Avoiding writing to the reference column
 			row_ptr= (int*)((char*)matrix + row * pitch);
 			int value = row_ptr[reference];
@@ -107,9 +99,9 @@ __global__ void orCol(int *matrix,size_t pitch,int numVert,int * list){
 }
 __global__ void checkSet(int* matrix,int* checkArray, size_t pitch, int numVert,int * list){
 
-	int col = blockIdx.x*blockDim.x + threadIdx.x + 1;;
+	int col = blockIdx.x*blockDim.x + threadIdx.x;
 	
-	if((col <= numVert) && col != 0){
+	if((col < numVert)){
 		int* rowFirstVert = (int*)((char*)matrix + (*(list+0)) * pitch);
 		int firstValue = rowFirstVert[col];
 		
@@ -134,11 +126,15 @@ void insert (int *matrix, size_t pitch,int numVert,int * list){
 }
 
 */
-__global__ void getValue(Edge* edges,int pos, int * list){
-	Edge temp = (Edge)(*(edges + pos));
-	*(list + 0) = temp.orig;
-	*(list + 1) = temp.dest;
-	//printf("First vertice is %d\n Second vertice is %d\n",*(list + 0),*(list + 1));
+__global__ void getValue(unsigned char* original,int* ordered, int * list,int pos, int numVert){
+	int index = *(ordered + pos);
+	int row = index / numVert;
+	int col = index - (row * numVert);
+	
+	//this is how we retrieve the data back in the CPU
+	*(list + 0) = row;
+	*(list + 1) = col;
+
 }
 
 __global__ void setValue(int* matrix,int* list,size_t pitch){
@@ -182,77 +178,76 @@ __global__ void initializeUnionMatrix(int * matrix,size_t pitch, int numVert){
 
 
 __device__ int devFound;
+__device__ int dev_totalCost;
 
-__global__ void reset(){
-	devFound = 0;
-}
+
 __global__ void arrayCheck(int * array,int numVert){
-	int i;
 	
-	devFound = 0;
-	for(i = 1; i <= numVert;i++){
-		if(array[i] == 1){
-			devFound =1;
-			//printf("Found!\n`");
-		}else{
-			//printf("Not found!\n");
-		}
-		array[i] = 0;
-	}
-	/*
-	int pos = blockIdx.x * 	blockDim.x + threadIdx.x;
-	
-	if( (pos != 0) && (pos <= numVert) && (array[pos] == 1)){
-				devFound = 1;
-	}
-	
-	__syncthreads();
-	*/
-}
-
-__global__ void insertResultingEdge(Edge* original, Edge* destination,int dest_pos, int orig_pos){
-	Edge temp = (Edge)(*(original + orig_pos));
-
-	(*(destination + dest_pos)) = temp;
+	int pos = blockIdx.x * blockDim.x + threadIdx.x;
+	int result = *(array + pos);
+	if(result == 1){
+		devFound = 0;	
+	}	
 	
 	__syncthreads();
 }
 
-__global__ void printEdges(Edge* edges,int n){
-	int i;
-	int min = 0;
-	int orig, dest,weight;
-	for(i = 0;i < n;i++){
-		Edge temp = (Edge)(*(edges + i));
-		orig = temp.orig;
-		dest = temp.dest;
-		weight = temp.weight;
-		
-		min += weight;
-		printf("%d-%d: %d\n",orig,dest, weight);
-		
-	}
-	
-	printf("\n\tMinimum cost = %d\n",min);
-	__syncthreads();
-}
-
+/*
+* Copy and array of char to another array of char with and offset of 1 to the left.
+*/
 __global__ void adjustGraph(unsigned char* source, unsigned char* dest, int numVert){
 	int col = blockIdx.y * blockDim.y + (threadIdx.y + 1);	
 	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
 	
-	*(dest + (col - 1) * numVert + (row - 1)) = *(dest + (col * numVert + row));
-}
-
-__global__ void copyingGraphs(unsigned char* source, unsigned char* dest, int numVert){
-	int col = blockIdx.y * blockDim.y + (threadIdx.y + 1);	
-	int row = blockIdx.x * blockDim.x + (threadIdx.x + 1);
+	if((col < numVert + 1) && (row < numVert + 1))
+		*(dest + (col - 1) * numVert + (row - 1)) = *(dest + (col * numVert + row));
 	
-	*(dest + col * numVert + row) = *(dest + (col * numVert + row));
+	__syncthreads();
 }
 
+__global__ void copyingGraphs(unsigned char* source, int* dest, int numVert){
+	int col = blockIdx.y * blockDim.y + (threadIdx.y );	
+	int row = blockIdx.x * blockDim.x + (threadIdx.x );
+	
+	//Avoiding going out of the array
+	if(col < numVert && row < numVert)
+		*(dest + col * numVert + row) = (int)*(dest + (col * numVert + row));
+	
+	__syncthreads();
+}
 
-void gpu(unsigned char** graph, int numVert) {	
+__global__ void addToMinWeight(unsigned char* original,int* list, int numVert){
+	int row = *(list + 0);
+	int col = *(list + 1);
+	
+	int weight = *(original + row * numVert + col);
+	
+	dev_totalCost += weight;
+}
+/*
+* 	Fill out the array of in an ordered way
+*/
+__global__ void fillOrder(int* order, int size){
+	int index = blockIdx.x * blockDim.x + threadIdx.x;
+	if(index < size)
+		*(order + index) = index;
+	
+	__syncthreads();
+}
+
+__global__ void printChars(unsigned char* array, int size,int numVert){
+	int i;
+	
+	for(i = 0; i < size; i++){
+		
+		//if((i % (numVert)) == 0)
+			//printf("\n");
+		printf("%3d ",*(array + i));
+	}
+	printf("\n");
+	
+}
+void gpu(unsigned char* graph, int numVert) {	
 	int size_1 = (numVert + 1) * (numVert + 1);
 	int size = numVert * numVert;
 	int* unionMatrix;	
@@ -263,7 +258,7 @@ void gpu(unsigned char** graph, int numVert) {
 	
 	unsigned char* d_weights_1;
 	unsigned char* d_weights_original;
-	unsigned char* d_weights_copy;
+	int* d_weights_copy;
 	
 	int* d_order;
 	
@@ -275,18 +270,18 @@ void gpu(unsigned char** graph, int numVert) {
 	
 	cudaMalloc(&d_weights_1, size_1 * sizeof(unsigned char)); //this is  directly copy from the original array that contains numVert + 1 Rows and Cols
 	cudaMalloc(&d_weights_original, size * sizeof(unsigned char)); //Array without the extra cols and rows
-	cudaMalloc(&d_weights_copy, size * sizeof(unsigned char)); //Array that is gonna be used in the sort
+	cudaMalloc(&d_weights_copy, size * sizeof(int)); //Array that is gonna be used in the sort
 	
 	cudaMalloc(&d_order, size * sizeof(int));//would store a sorted array of number to keep track of the indexes to move
 	
 	cudaMalloc(&vertList,2 * sizeof(int));
 	
 	cudaMallocPitch(&unionMatrix, &pitch,
-                (numVert + 1) * sizeof(Edge), numVert + 1);
-	cudaMalloc(&checkArray, (numVert+1)*sizeof(int));
+                (numVert) * sizeof(int), numVert);
+	cudaMalloc(&checkArray, (numVert)*sizeof(int));
 
 	
-	cudaMemcpy(d_weights_1, (*graph), size_1 * sizeof(unsigned char), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_weights_1, graph, size_1 * sizeof(unsigned char), cudaMemcpyHostToDevice);
 	
 	/****************************************************************************************
 	* End allocating Memory in the device
@@ -297,85 +292,80 @@ void gpu(unsigned char** graph, int numVert) {
 	dim3 threadsPerBlock(500,500);
 	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
 	
+	fillOrder<<<numBlocks2D,threadsPerBlock>>>(d_order,size);
 	adjustGraph<<<numBlocks2D,threadsPerBlock>>>(d_weights_1, d_weights_original, numVert);
 	copyingGraphs<<<numBlocks2D,threadsPerBlock>>>(d_weights_original, d_weights_copy, numVert);
+	
 	/****************************************************************************************
 	* Sorting Section
 	*****************************************************************************************/
 	
-	thrust::device_ptr<unsigned char> t_weight_copy(d_weights_copy);
+	printChars<<<1,1>>>(d_weights_1,size_1,numVert + 1);
+	thrust::device_ptr<int> t_weights_copy(d_weights_copy);
 	thrust::device_ptr<int> t_order(d_order);
+	
 
-	thrust::sort_by_key( t_weights_copy , t_weights_copy + size, t_order);
+	//thrust::sort_by_key(t_weights_copy , t_weights_copy + size, t_order);
 	
 	/****************************************************************************************
 	* End Sorting
 	*****************************************************************************************/
+	typeof(devFound) found;
+	int totalCost;
+	
+	initializeUnionMatrix<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert); //initialize UnionMatrix to all 0s	
 	
 	int j; 
-	typeof(devFound) found;
-	
-	//__device__ int devFound;
-	
-	//cudaMemcpyToSymbol(devFound,&value,sizeof(int));
-	
-		
-	//printf("Number of Blocks %d\n",numBlocks2D.x);	
-	initializeUnionMatrix<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert);	
-	//printGPUMatrix<<<1,1>>>(unionMatrix,numVert + 1);	
-	
-	//cudaMemcpyToSymbol(devFound, found,sizeof(int));
 	int counter = 0;
 	
-	for(j = 0;j < numEdges;j++){
-		getValue<<<1,1>>>(d_edges,j,vertList);
-
+	for(j = 0;j < size;j++){
+		getValue<<<1,1>>>(d_weights_original, d_order, vertList,j,numVert);
 		
+		//checking if those vertices are not in any set
 		checkSet<<<numBlocks,numThreads>>>(unionMatrix,checkArray,pitch,numVert,vertList);
 		
+	/***************************************************************************************
+	* Inserting the node after it was checked that it didnt exist
+	****************************************************************************************/
+	
+		arrayCheck<<<numBlocks,numThreads>>>( checkArray,numVert);
 		
-		/***************************************************************************************
-		* Inserting the node after it was checked that it didnt exist
-		****************************************************************************************/
-		//reset<<<1,1>>>();
-		arrayCheck<<<1,1>>>( checkArray,numVert);
-		
-		
-        cudaMemcpyFromSymbol(&found, devFound, sizeof(found), 0, cudaMemcpyDeviceToHost);
+		cudaMemcpyFromSymbol(&found, devFound, sizeof(found), 0, cudaMemcpyDeviceToHost);
 		
 		if(found == 0){
-			
-			insertResultingEdge<<<1,1>>>(d_edges,d_resultEdges,counter,j);
+				
+			//insertResultingEdge<<<numBlocks,numThreads>>>(d_edges,d_resultEdges,counter,j);
+			addToMinWeight<<<1,1>>>(d_weights_original,vertList,numVert);
 			
 			counter++;
 			int numThreads_or = threadsPerBlock.x;
 			int numBlocks_or = numBlocks2D.x;
 		
+			//updating unionMatrix
 			setValue<<<1,1>>>(unionMatrix,vertList, pitch);	
 		
-			//updating the rest of the sets
+			//Or both inserted vertices's columns
 			orCol<<<numBlocks_or,numThreads_or>>>(unionMatrix,pitch,numVert,vertList);
 		
-			//printGPUMatrix<<<1,1>>>(unionMatrix,numVert);	
-
-			update<<<numBlocks,threadsPerBlock>>>(unionMatrix,pitch,numVert,vertList);	
+			//Freaki fast union find
+			update<<<numBlocks,threadsPerBlock>>>(unionMatrix,pitch,numVert,vertList);
 			
 		}
 		
+	
 	}
 	
+
+	cudaMemcpyFromSymbol(&totalCost, dev_totalCost, sizeof(found), 0, cudaMemcpyDeviceToHost);
 	
-	printEdges<<<1,1>>>(d_resultEdges,numVert - 1);
+	printf("\n\tMinimum cost = %d\n",totalCost);
+	//cudaMemcpy((*graph),d_result, size * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	
-	cudaMemcpy(h_edges,d_edges, numEdges * sizeof(Edge), cudaMemcpyDeviceToHost);
-	cudaMemcpy(h_weights ,d_weights, numEdges * sizeof(int), cudaMemcpyDeviceToHost);
-	
-	memcpy(((*graph) -> weights) -> weights, h_weights,numEdges * sizeof(int));
-	memcpy( ((*graph) -> edges) , h_edges,numEdges * sizeof(Edge));
-	 
-	cudaFree(d_weights); 
-	cudaFree(d_edges);
-	cudaFree(d_resultEdges);
+	cudaFree(vertList); 	
+	cudaFree(d_weights_1); 
+	cudaFree(d_weights_copy);
+	//cudaFree(d_result);
+	cudaFree(d_order);
 	cudaFree(checkArray);
 	cudaFree(unionMatrix);
 }
@@ -420,6 +410,7 @@ void normal(unsigned char** cost, int n)
 		v=find(parent,v);
 		if(uni(parent,u,v))
 		{
+			//ne++;
 			printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
 			mincost += (int)min;
 		}
@@ -452,6 +443,7 @@ unsigned char* genGraph(int numVert,unsigned int seed){
 	int total_size = (numVert + 1) * (numVert + 1);
 	unsigned char* graph = (unsigned char*)malloc(total_size * sizeof(char));
 	
+	srand(seed);
 	int i,j;
 	
 	for(i = 1; i <= numVert - 1; i++){
@@ -497,27 +489,39 @@ void print2DArray(unsigned char* array, int numVert){
 int main()                                                                                                                                                                                  
 {         
 	time_t t;
+	time(&t);
 	unsigned char* theGraph;
-	int numVert = 10;
-	theGraph = genGraph(numVert,(unsigned) time(&t));
+	int numVert = 5;
+	theGraph = genGraph(numVert,(unsigned) t);
 
 	
+	int i;
 	
+	for(i = 0; i < 36; i++){
+		printf("%3d ",*(theGraph + i));
+	}
+	printf("\n");
 	
 	printf("==============================================\n");
-	print2DArray(theGraph,numVert);	
+	//print2DArray(theGraph,numVert);	
 	
 	
 	printf("==============================================\n");
 	printf("==============================================\n");
 	printf("Doing Normal\n");
 	
+	starttime();
 	normal(&theGraph,numVert);
+	
+	endtime("CPU Time");
+	
+	
+	//printf("THE TIIIIIMEEEE: %d\n", (int)t);
 	//normal(&a,n);
 	//gpu(a,n);
 	
 	
-	//gpu(&theGraph);
+	gpu(theGraph, numVert);
 	
 	//printGraph(theGraph);
 	
