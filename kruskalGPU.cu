@@ -13,6 +13,19 @@ int setWeight(int* array[],int row, int col, int n, int value);
 
 #define MAX_WEIGHT  250
 
+#define cudaCheckErrors(msg) \
+    do { \
+        cudaError_t __err = cudaGetLastError(); \
+        if (__err != cudaSuccess) { \
+            fprintf(stderr, "Fatal error: %s (%s at %s:%d)\n", \
+                msg, cudaGetErrorString(__err), \
+                __FILE__, __LINE__); \
+            fprintf(stderr, "*** FAILED - ABORTING\n"); \
+            exit(1); \
+        } \
+    } while (0)
+
+		
 /****************************************************************************************
 * Global variables declaration
 ****************************************************************************************/
@@ -81,15 +94,17 @@ __global__ void initializeUnionMatrix(int * matrix,size_t pitch, int numVert){
 	int row = blockIdx.y * blockDim.y + threadIdx.y;	
 	int col = blockIdx.x * blockDim.x + threadIdx.x;
 	
-	
+	//printf("working on col:%d row:%d \n",col,row);
 	
 	if(row < numVert && col < numVert){
 		
 		if(row == col){ //if is t he diagonal make mark it as 1. Each element belongs to its set.
 			
 			int* row_ptr= (int*)((char*)matrix + row * pitch);
-			//printf("working on col:%d row:%d VALUE:%d\n",col,row,1);
+			
 			row_ptr[col] = 1;
+			
+			//printf("working on col:%d row:%d VALUE:%d\n",col,row,1);
 			
 		}else{
 			
@@ -314,15 +329,14 @@ __global__ void resetArrayCheck(int * array,int numVert){
 *	int numVert: number of vertices of the adjecency matrix
 */
 __global__ void fillOrder(int* order, int size, int numVert){
-	int col = blockIdx.x * blockDim.x + threadIdx.x;
-	int row = blockIdx.y * blockDim.y + threadIdx.y;
-	
-	int index = row * numVert + col; //getting the actual position in the array.
+
+	int index = blockIdx.x * blockDim.x + threadIdx.x; //getting the actual position in the array.
 	
 	if(index < size)//checking not to go out of boundries
 		*(order + index) = index;
 	
 	__syncthreads();
+	
 }//end of fillOrder
 
 
@@ -335,14 +349,15 @@ __global__ void fillOrder(int* order, int size, int numVert){
 *	unsigned char* dest: Array to copy to
 *	int numVert: number of vertices of the adjecency matrix
 */
-__global__ void copyingGraphs(unsigned char* source, int* dest, int numVert){
-	int row = blockIdx.y * blockDim.y + threadIdx.y;	
-	int col = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void copyingGraphs(unsigned char* source, int* dest, int size){
+
+	int index = blockIdx.x * blockDim.x + threadIdx.x; //getting the actual position in the array.
 	
-	if(col < numVert && row < numVert) //checking not to go out of boundries
-		*(dest + row * numVert + col) = (int)*(source + (row * numVert + col));
+	if(index < size) //checking not to go out of boundries
+		*(dest + index) = (int)*(source + index);
 	
 	__syncthreads();
+	
 }//end copyingGraphs
 
 
@@ -379,24 +394,30 @@ __global__ void getValue(unsigned char* original,int* ordered, int * list,int po
 
 }//end getValue
 
+
+/*
+*	Prints an array in the GPU
+*/
+__global__ void printA(int* array, int size){
+	int i;
+	
+	for(i = 0; i < size; i++){
+		printf("%d ",array[i]);
+		
+	}
+	
+	printf("\n");
+	
+}
 /****************************************************************************************
 * End of the Extra tool methods section
 ****************************************************************************************/
 
 
-
-
-
-
-
-
-
-
-
 /*
-*
+*	GPU implementation of Kruskal's algorithm multi-threaded.
 */
-void gpu(unsigned char* graph, int numVert) {	
+void gpu(unsigned char** graph, int numVert) {	
 	int size = numVert * numVert;
 	int* unionMatrix;	
 	
@@ -428,30 +449,30 @@ void gpu(unsigned char* graph, int numVert) {
 	cudaMalloc(&checkArray, (numVert)*sizeof(int)); //allocating memory for the checkArray
 
 	
-	cudaMemcpy(d_weights_original, graph, size * sizeof(unsigned char), cudaMemcpyHostToDevice); //Transfering the 1D array from the CPU's DRAM into the Device's DRAM
+	cudaMemcpy(d_weights_original, (*graph), size * sizeof(unsigned char), cudaMemcpyHostToDevice); //Transfering the 1D array from the CPU's DRAM into the Device's DRAM
 	
+	cudaCheckErrors("cudaMalloc fail");
 	/****************************************************************************************
 	* End allocating Memory in the device
 	*****************************************************************************************/
 	int numThreads = 1024;
 	int numBlocks = numVert / numThreads + 1;
 	
-	dim3 threadsPerBlock(1024,1024);
+	dim3 threadsPerBlock(30,30);
 	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
 	
-	fillOrder<<<numBlocks2D,threadsPerBlock>>>(d_order,size,numVert);
+	fillOrder<<<size/numThreads + 1,numThreads>>>(d_order,size,numVert);
+	cudaCheckErrors("filling arrays fail");
 	
-	copyingGraphs<<<numBlocks2D,threadsPerBlock>>>(d_weights_original, d_weights_copy, numVert);
+	copyingGraphs<<<size/numThreads + 1,numThreads>>>(d_weights_original, d_weights_copy, size);
+	cudaCheckErrors("Copying arrays fail");
 	
 	/****************************************************************************************
 	* Sorting Section
 	*****************************************************************************************/
-	
-	thrust::device_ptr<int> t_weights_copy(d_weights_copy);
-	thrust::device_ptr<int> t_order(d_order);
-	
 
-	thrust::sort_by_key(t_weights_copy , t_weights_copy + size, t_order);
+	thrust::sort_by_key(thrust::device_ptr<int>(d_weights_copy) , thrust::device_ptr<int>(d_weights_copy + size), thrust::device_ptr<int> (d_order));
+	cudaCheckErrors("Sort fail");
 	
 	/****************************************************************************************
 	* End Sorting
@@ -460,9 +481,13 @@ void gpu(unsigned char* graph, int numVert) {
 	int totalCost;
 	
 	resetArrayCheck<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
-	resetGlobalFound<<<1,1>>>(); //resseting the global found variable to 0
-	initializeUnionMatrix<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert); //initializing union-find-matrix
 	
+	resetGlobalFound<<<1,1>>>(); //resseting the global found variable to 0
+	cudaCheckErrors("Reset Found fail");
+	
+	initializeUnionMatrix<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert); //initializing union-find-matrix
+	cudaCheckErrors("Union find initialization fail");
+
 	int j; 
 	int counter = 0;
 	
@@ -657,7 +682,7 @@ int main()
 	printf("Doing GPU\n");
 	
 	starttime();
-	gpu((unsigned char*)theGraph, numVert);
+	gpu(&theGraph, numVert);
 	
 	endtime("GPU Time");
 	
