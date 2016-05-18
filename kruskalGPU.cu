@@ -1,5 +1,6 @@
 #include <emmintrin.h>
 #include <sys/time.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <thrust/sort.h>
@@ -12,6 +13,9 @@ int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
 #define MAX_WEIGHT  250
+
+#define TRUE 1
+#define FALSE 0
 
 #define cudaCheckErrors(msg) \
     do { \
@@ -630,6 +634,8 @@ int uni(int* parent, int i,int j)
 	The generated matrix doesnt accept loops.
 */
 unsigned char* genGraph(int numVert,unsigned int seed){
+	printf("Generating complete graph with %d vertices...\n",numVert);
+	int numEdges = (numVert * (numVert - 1)) / 2; //Formula to get the number of edges of a complete graph
 	
 	//total amount of cells of the matrix that translate into the size of the array in 1D
 	int total_size = numVert * numVert;
@@ -659,6 +665,8 @@ unsigned char* genGraph(int numVert,unsigned int seed){
 													   //No loops allowed
 	}
 	
+	printf("Graph generated with %d edges\n",numEdges);
+	
 	return graph; //pointer to the graph in the heap.
 	
 }//end of genGraph
@@ -667,12 +675,44 @@ unsigned char* genGraph(int numVert,unsigned int seed){
 /*
 	It is the driver.
 */
-int main()                                                                                                                                                                                  
+int main(int argc, char **argv)                                                                                                                                                                                  
 {         
+	extern char *optarg;
+	extern int optind;
+	
+	int err = 0; //if there is some error reading the argumetns of the intput
+	
+	int vflag = FALSE;
+	char c;
+	int numVert; // number of vertices for the test case
+	
+	static char usage[] = "usage: %s -v number_vertices";
+	while((c = getopt(argc,argv,"v:")) != -1){
+		switch(c){
+			case 'v':
+				vflag = TRUE;
+				numVert = atoi(optarg);
+				break;
+			case '?':
+				err = 1;
+				break;
+		}
+	}
+	
+	if(argc > optind){
+		fprintf(stderr,"Too many arguments\n");
+		fprintf(stderr,usage,argv[0]);
+		exit(1);
+	}
+	else if(err){ //error detected in one of the flags
+		fprintf(stderr,usage,argv[0]);
+		exit(1);
+	}
+	
 	time_t t;
 	time(&t); //generating a random seed every second
 	unsigned char* theGraph; //pointer to a 1D array where the matrix NxN is gonna be
-	int numVert = 1000; // number of vertices for the test case
+	
 	
 	theGraph = genGraph(numVert,(unsigned) t); //initializing the matrix
 	
