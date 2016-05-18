@@ -17,6 +17,10 @@ int setWeight(int* array[],int row, int col, int n, int value);
 #define TRUE 1
 #define FALSE 0
 
+#define RESET "\x1B[0m"
+#define RED   "\x1B[31m"
+#define GRN   "\x1B[32m"
+
 #define cudaCheckErrors(msg) \
     do { \
         cudaError_t __err = cudaGetLastError(); \
@@ -682,22 +686,40 @@ int main(int argc, char **argv)
 	
 	int err = 0; //if there is some error reading the argumetns of the intput
 	
-	int vflag = FALSE;
+	int vflag = FALSE; //number of vertices
+	int tflag = FALSE; //time tracking on
+	int gflag = FALSE; //no GPU implementation
+	int cflag = FALSE; //no CPU implementation
+	int hflag = FALSE; //number of vertices
+	
 	char c;
 	int numVert; // number of vertices for the test case
 	
-	static char usage[] = "usage: %s -v number_vertices";
-	while((c = getopt(argc,argv,"v:")) != -1){
+	static char usage[] = "usage: %s -v number_vertices [-c] [-g] [-t]\n";
+	while((c = getopt(argc,argv,"hv:cgt")) != -1){
 		switch(c){
+			case 'h':
+				hflag = TRUE;
+				break;
 			case 'v':
 				vflag = TRUE;
 				numVert = atoi(optarg);
+				break;
+			case 't':
+				tflag = TRUE;
+				break;
+			case 'c':
+				cflag = TRUE;
+				break;
+			case 'g':
+				gflag = TRUE;
 				break;
 			case '?':
 				err = 1;
 				break;
 		}
 	}
+	
 	
 	if(argc > optind){
 		fprintf(stderr,"Too many arguments\n");
@@ -708,6 +730,35 @@ int main(int argc, char **argv)
 		fprintf(stderr,usage,argv[0]);
 		exit(1);
 	}
+	else if(!vflag){
+		fprintf(stderr,"Must insert  the number of vertices\n");
+		fprintf(stderr,usage,argv[0]);
+		exit(1);
+	}else if(cflag && gflag){
+		fprintf(stderr,"Must run either on the GPU or the CPU\n");
+		fprintf(stderr,usage,argv[0]);
+		exit(1);
+	}
+	
+	
+	if(tflag){
+		printf("Time track " GRN "ENABLED\n" RESET);
+
+	}else{
+		printf("Time track " RED "DISABLED\n" RESET);
+	}
+	
+	if(cflag){
+		printf("CPU implementation " RED "DISABLED\n" RESET);
+	}else{
+		printf("CPU implementation " GRN "ENABLED\n" RESET);
+	}
+	
+	if(gflag){
+		printf("GPU implementation " RED "DISABLED\n" RESET);
+	}else{
+		printf("GPU implementation " GRN "ENABLED\n" RESET);
+	}
 	
 	time_t t;
 	time(&t); //generating a random seed every second
@@ -716,24 +767,38 @@ int main(int argc, char **argv)
 	
 	theGraph = genGraph(numVert,(unsigned) t); //initializing the matrix
 	
+	if(!gflag){
+		printf("\n==============================================\n");
+		printf("Doing GPU\n");
+		
+		if(tflag){
+			starttime();
+			
+			gpu(&theGraph, numVert);
 	
-	printf("==============================================\n");
-	printf("==============================================\n");
-	printf("Doing GPU\n");
+			endtime("GPU Time");
+		}else{
+			gpu(&theGraph, numVert);
+		}
+	}
+
 	
-	starttime();
-	gpu(&theGraph, numVert);
+	if(!cflag){
+		printf("\n==============================================\n");
+		printf("Doing CPU\n");
+		
+		if(tflag){
+			starttime();
+			
+			normal((unsigned char*)theGraph,numVert);
 	
-	endtime("GPU Time");
+			endtime("CPU Time");
+		}else{
+			normal((unsigned char*)theGraph,numVert);
+		}
+	}
 	
-	printf("==============================================\n");
-	printf("==============================================\n");
-	printf("Doing Normal\n");
 	
-	starttime();
-	normal((unsigned char*)theGraph,numVert);
-	
-	endtime("CPU Time");
 	
 
   return 0;
