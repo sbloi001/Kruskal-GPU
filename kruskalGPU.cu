@@ -12,7 +12,7 @@ int uni(int*,int,int);
 int getWeight(int array[],int row, int col, int n);
 int setWeight(int* array[],int row, int col, int n, int value);
 
-#define MAX_WEIGHT  250
+#define MAX_WEIGHT  6000
 
 #define TRUE 1
 #define FALSE 0
@@ -357,7 +357,7 @@ __global__ void fillOrder(int* order, int size, int numVert){
 *	unsigned char* dest: Array to copy to
 *	int numVert: number of vertices of the adjecency matrix
 */
-__global__ void copyingGraphs(unsigned char* source, int* dest, int size){
+__global__ void copyingGraphs(unsigned short* source, int* dest, int size){
 
 	int index = blockIdx.x * blockDim.x + threadIdx.x; //getting the actual position in the array.
 	
@@ -378,7 +378,7 @@ __global__ void copyingGraphs(unsigned char* source, int* dest, int size){
 *	int* list: Mainly a size 2 array with the 2 vertice numbers to get the weight of the edge between them.
 *	int numVert: number of vertices of the adjecency matrix
 */
-__global__ void addToMinWeight(unsigned char* original,int* list, int numVert){
+__global__ void addToMinWeight(unsigned short* original,int* list, int numVert){
 	int row = *(list + 0);
 	int col = *(list + 1);
 	
@@ -391,7 +391,7 @@ __global__ void addToMinWeight(unsigned char* original,int* list, int numVert){
 /*
 *	This method retrieves the column and row of 
 */
-__global__ void getValue(unsigned char* original,int* ordered, int * list,int pos, int numVert){
+__global__ void getValue(unsigned short* original,int* ordered, int * list,int pos, int numVert){
 	int index = *(ordered + pos);
 	int row = index / numVert;
 	int col = index % numVert;
@@ -425,7 +425,7 @@ __global__ void printA(int* array, int size){
 /*
 *	GPU implementation of Kruskal's algorithm multi-threaded.
 */
-void gpu(unsigned char** graph, int numVert) {	
+void gpu(unsigned short** graph, int numVert) {	
 	int size = numVert * numVert;
 	int* unionMatrix;	
 	
@@ -433,7 +433,7 @@ void gpu(unsigned char** graph, int numVert) {
 	
 	size_t pitch;	
 	
-	unsigned char* d_weights_original;
+	unsigned short* d_weights_original;
 	int* d_weights_copy;
 	
 	int* d_order;
@@ -444,7 +444,7 @@ void gpu(unsigned char** graph, int numVert) {
 	* Alocating memory in the device
 	*****************************************************************************************/
 	
-	cudaMalloc(&d_weights_original, size * sizeof(unsigned char)); //Array without the extra cols and rows
+	cudaMalloc(&d_weights_original, size * sizeof(unsigned short)); //Array without the extra cols and rows
 	cudaMalloc(&d_weights_copy, size * sizeof(int)); //Array that is gonna be used in the sort
 	
 	cudaMalloc(&d_order, size * sizeof(int));//would store a sorted array of number to keep track of the indexes to move
@@ -457,7 +457,7 @@ void gpu(unsigned char** graph, int numVert) {
 	cudaMalloc(&checkArray, (numVert)*sizeof(int)); //allocating memory for the checkArray
 
 	
-	cudaMemcpy(d_weights_original, (*graph), size * sizeof(unsigned char), cudaMemcpyHostToDevice); //Transfering the 1D array from the CPU's DRAM into the Device's DRAM
+	cudaMemcpy(d_weights_original, (*graph), size * sizeof(unsigned short), cudaMemcpyHostToDevice); //Transfering the 1D array from the CPU's DRAM into the Device's DRAM
 	
 	cudaCheckErrors("cudaMalloc fail");
 	/****************************************************************************************
@@ -499,7 +499,7 @@ void gpu(unsigned char** graph, int numVert) {
 	int j; 
 	int counter = 0;
 	
-	for(j = 0;j < size;j++){
+	for(j = 0;(j < size) && (counter < numVert - 1);j++){ //if we got the min spaming tree
 		getValue<<<1,1>>>(d_weights_original, d_order, vertList,j,numVert);
 		
 		//checking if those vertices are not in any set
@@ -533,10 +533,7 @@ void gpu(unsigned char** graph, int numVert) {
 		
 		resetArrayCheck<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
 		resetGlobalFound<<<1,1>>>(); //resseting the global found variable to 0
-		
-		if(counter == numVert - 1){ //if we got the min spaming tree
-			break;
-		}
+
 	
 	}
 	
@@ -558,14 +555,14 @@ void gpu(unsigned char** graph, int numVert) {
  /*
 	Normal implementation of Kruskal's algorithm single threaded.
  */
-void normal(unsigned char* cost, int n)
+void normal(unsigned short* cost, int n)
 {
 	//array used for the union find algorithm
 	int parent[n];
 	
 	int i,j,a,b,u,v,ne=1;
 	int mincost=0;
-	unsigned char min;
+	unsigned short min;
 	
 	//initializing the parent array to all be -1
 	for(i = 0; i < n; i++){
@@ -592,8 +589,8 @@ void normal(unsigned char* cost, int n)
 		
 		if(uni(parent,u,v) != -1)
 		{
-			ne++;
-			//printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
+			//ne++;
+			printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
 			mincost += (int)min;
 		}
 		 (*(cost + a * n + b )) = (*(cost + b * n + a )) = MAX_WEIGHT + 1; //replacing the current weight of the edges for more than the maximun
@@ -637,7 +634,7 @@ int uni(int* parent, int i,int j)
 	The result is a 1D array. Position 0 of the array being the start of the row 0 column 0.
 	The generated matrix doesnt accept loops.
 */
-unsigned char* genGraph(int numVert,unsigned int seed){
+unsigned short* genGraph(int numVert,unsigned int seed){
 	printf("Generating complete graph with %d vertices...\n",numVert);
 	int numEdges = (numVert * (numVert - 1)) / 2; //Formula to get the number of edges of a complete graph
 	
@@ -645,19 +642,19 @@ unsigned char* genGraph(int numVert,unsigned int seed){
 	int total_size = numVert * numVert;
 	
 	//allocating memory for the array. This is being allocated in the heap.
-	unsigned char* graph = (unsigned char*)malloc(total_size * sizeof(char));
+	unsigned short* graph = (unsigned short*)malloc(total_size * sizeof(unsigned short));
 	
 	//initializating the seed
 	srand(seed);
 	
 	int i,j;
 	
-	unsigned char temp;
+	unsigned short temp;
 	
 	//filling the matrix except the diagonal.
 	for(i = 0; i < numVert - 1; i++){
 		for(j = i + 1; j <  numVert;j++){
-			temp = (unsigned char)((rand() % MAX_WEIGHT) + 1); //generated weight
+			temp = (unsigned short)((rand() % MAX_WEIGHT) + 1); //generated weight
 			(*(graph + i * numVert + j)) = temp; //position (i,j)
 			(*(graph + j * numVert + i)) = temp; //position (j,i)
 		}
@@ -681,40 +678,46 @@ unsigned char* genGraph(int numVert,unsigned int seed){
 */
 int main(int argc, char **argv)                                                                                                                                                                                  
 {         
+	//ecternal variables from getopt
 	extern char *optarg;
 	extern int optind;
 	
 	int err = 0; //if there is some error reading the argumetns of the intput
 	
+	/***************************************************************************************
+	* FLAGS section
+	****************************************************************************************/
 	int vflag = FALSE; //number of vertices
 	int tflag = FALSE; //time tracking on
 	int gflag = FALSE; //no GPU implementation
 	int cflag = FALSE; //no CPU implementation
 	int hflag = FALSE; //number of vertices
+	/***************************************************************************************/
 	
-	char c;
+	
+	char c; //use to iterate the different options
 	int numVert; // number of vertices for the test case
 	
 	static char usage[] = "usage: %s -v number_vertices [-c] [-g] [-t]\n";
 	while((c = getopt(argc,argv,"hv:cgt")) != -1){
 		switch(c){
-			case 'h':
+			case 'h': //-h option detected
 				hflag = TRUE;
 				break;
-			case 'v':
+			case 'v': //-v option detected
 				vflag = TRUE;
 				numVert = atoi(optarg);
 				break;
-			case 't':
+			case 't': //-t option detected
 				tflag = TRUE;
 				break;
-			case 'c':
+			case 'c': //-c option detected
 				cflag = TRUE;
 				break;
-			case 'g':
+			case 'g': //-g option detected
 				gflag = TRUE;
 				break;
-			case '?':
+			case '?': //unrecognized option detected
 				err = 1;
 				break;
 		}
@@ -730,31 +733,31 @@ int main(int argc, char **argv)
 		fprintf(stderr,usage,argv[0]);
 		exit(1);
 	}
-	else if(!vflag){
+	else if(!vflag){ //number of vertices MUST be specified. 
 		fprintf(stderr,"Must insert  the number of vertices\n");
 		fprintf(stderr,usage,argv[0]);
 		exit(1);
-	}else if(cflag && gflag){
+	}else if(cflag && gflag){ //user must at least run one of the 2 implementations
 		fprintf(stderr,"Must run either on the GPU or the CPU\n");
 		fprintf(stderr,usage,argv[0]);
 		exit(1);
 	}
 	
 	
-	if(tflag){
+	if(tflag){ //reporting time tricking enabled
 		printf("Time track " GRN "ENABLED\n" RESET);
 
-	}else{
+	}else{  //reporting time tricking disabled
 		printf("Time track " RED "DISABLED\n" RESET);
 	}
 	
-	if(cflag){
+	if(cflag){ //reporting CPU omission
 		printf("CPU implementation " RED "DISABLED\n" RESET);
 	}else{
 		printf("CPU implementation " GRN "ENABLED\n" RESET);
 	}
 	
-	if(gflag){
+	if(gflag){ //reporting GPU omission
 		printf("GPU implementation " RED "DISABLED\n" RESET);
 	}else{
 		printf("GPU implementation " GRN "ENABLED\n" RESET);
@@ -762,39 +765,39 @@ int main(int argc, char **argv)
 	
 	time_t t;
 	time(&t); //generating a random seed every second
-	unsigned char* theGraph; //pointer to a 1D array where the matrix NxN is gonna be
+	unsigned short* theGraph; //pointer to a 1D array where the matrix NxN is gonna be
 	
 	
 	theGraph = genGraph(numVert,(unsigned) t); //initializing the matrix
 	
-	if(!gflag){
+	if(!gflag){ //if the flag to omit GPU is not set
 		printf("\n==============================================\n");
 		printf("Doing GPU\n");
 		
-		if(tflag){
+		if(tflag){ //traking time enabled
 			starttime();
 			
 			gpu(&theGraph, numVert);
 	
 			endtime("GPU Time");
-		}else{
+		}else{ //tracking time disabled
 			gpu(&theGraph, numVert);
 		}
 	}
 
 	
-	if(!cflag){
+	if(!cflag){ //if the flag to omit CPU is not set
 		printf("\n==============================================\n");
 		printf("Doing CPU\n");
 		
-		if(tflag){
+		if(tflag){ //traking time enabled
 			starttime();
 			
-			normal((unsigned char*)theGraph,numVert);
+			normal((unsigned short*)theGraph,numVert);
 	
 			endtime("CPU Time");
-		}else{
-			normal((unsigned char*)theGraph,numVert);
+		}else{ //tracking time disabled
+			normal((unsigned short*)theGraph,numVert);
 		}
 	}
 	
