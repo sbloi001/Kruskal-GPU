@@ -20,6 +20,7 @@ int setWeight(int* array[],int row, int col, int n, int value);
 #define RESET "\x1B[0m"
 #define RED   "\x1B[31m"
 #define GRN   "\x1B[32m"
+#define CYN  "\x1B[36m"
 
 #define cudaCheckErrors(msg) \
     do { \
@@ -555,7 +556,7 @@ void gpu(unsigned short** graph, int numVert) {
  /*
 	Normal implementation of Kruskal's algorithm single threaded.
  */
-void normal(unsigned short* cost, int n)
+void normal(unsigned short* cost, int n, unsigned short* result)
 {
 	//array used for the union find algorithm
 	int parent[n];
@@ -589,8 +590,10 @@ void normal(unsigned short* cost, int n)
 		
 		if(uni(parent,u,v) != -1)
 		{
-			//ne++;
-			printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
+			ne++;
+			*(result + a * n + b) = min;
+			*(result + b * n + a) = min;
+			//printf("%d edge (%d,%d) =%d\n",ne++,a,b,min);
 			mincost += (int)min;
 		}
 		 (*(cost + a * n + b )) = (*(cost + b * n + a )) = MAX_WEIGHT + 1; //replacing the current weight of the edges for more than the maximun
@@ -627,6 +630,41 @@ int uni(int* parent, int i,int j)
 	
 	return -1;
 }//end of uni
+
+/*
+*	This method prints de result of the implementation into a file;
+*/
+void printToFile(const char* fileName, unsigned short* graphToPrint, int numVert){
+	printf("\n");
+	FILE* fileToWrite = fopen(fileName,"w+");
+	
+	if(fileToWrite){
+		printf("File" CYN " %s " RESET "created!\n",fileName);
+	}else{
+		fprintf(stderr,"Error creating %s file\n",fileName);
+	}
+	
+	printf("Writing into file...\n");
+	
+	int i,j;
+	unsigned short value;
+	
+	for(i = 0; i < numVert;i++){
+		for(j = i + 1; j < numVert;j++){
+			value = *(graphToPrint + i * numVert + j);
+			if(value != 0){
+				fprintf(fileToWrite,"edge (%d,%d) =%d\n",i,j,value);			
+			}
+				
+		}
+	}		
+	
+	
+	if(fileToWrite){
+		printf("File" CYN " %s " RESET "written successfully!\n",fileName);
+	}
+	fclose(fileToWrite);
+}
 
 
 /*
@@ -695,18 +733,13 @@ int main(int argc, char **argv)
 	int fflag = FALSE; //file report of edges inserted
 	/***************************************************************************************/
 	
-	/***************************************************************************************
-	* FILE creation section
-	****************************************************************************************/
-	FILE* cpuReportFile; //where the edges from the cpu implementation are gonna be copied
-	FILE* gpuReportFile; //where the edges from the gpu implementation are gonna be copied
 	
 	/***************************************************************************************/
 	char c; //use to iterate the different options
 	int numVert; // number of vertices for the test case
 	
 	static char usage[] = "usage: %s -v number_vertices [-c] [-g] [-t] [-f]\n";
-	while((c = getopt(argc,argv,"hv:cgt")) != -1){
+	while((c = getopt(argc,argv,"hv:cgtf")) != -1){
 		switch(c){
 			case 'h': //-h option detected
 				hflag = TRUE;
@@ -773,6 +806,12 @@ int main(int argc, char **argv)
 		printf("GPU implementation " GRN "ENABLED\n" RESET);
 	}
 	
+	if(fflag){ //reporting writing to file
+		printf("Write to file " GRN "ENABLED\n" RESET);
+	}else{
+		printf("Write to file " RED "DISABLED\n" RESET);
+	}
+	
 	time_t t;
 	time(&t); //generating a random seed every second
 
@@ -785,6 +824,9 @@ int main(int argc, char **argv)
 	
 	/***************************************************************************************/
 	
+	cpuResult = (unsigned short*)calloc(numVert * numVert, sizeof(unsigned short)); //creating a graph size NxN with zero connection between vertices
+	gpuResult = (unsigned short*)calloc(numVert * numVert, sizeof(unsigned short)); //creating a graph size NxN with zero connection between vertices
+
 	theGraph = genGraph(numVert,(unsigned) t); //initializing the matrix
 	
 	if(!gflag){ //if the flag to omit GPU is not set
@@ -810,13 +852,19 @@ int main(int argc, char **argv)
 		if(tflag){ //traking time enabled
 			starttime();
 			
-			normal((unsigned short*)theGraph,numVert);
+			normal((unsigned short*)theGraph,numVert,(unsigned short*)cpuResult);
 	
 			endtime("CPU Time");
 		}else{ //tracking time disabled
-			normal((unsigned short*)theGraph,numVert);
+			normal((unsigned short*)theGraph,numVert,(unsigned short*)cpuResult);
+		}
+		
+		if(fflag){
+			printToFile("cpuResult", (unsigned short*)cpuResult, numVert);
 		}
 	}
+	
+	
 	
 	
 	
