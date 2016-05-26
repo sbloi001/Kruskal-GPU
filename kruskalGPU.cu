@@ -418,6 +418,34 @@ __global__ void printA(int* array, int size){
 	printf("\n");
 	
 }
+/*
+* 	Inserts edge back into the result graph
+*/
+__global__ void insertToResult(unsigned short* origin, unsigned short* result, int* list, int numVert){
+	if(threadIdx.x == 0){
+		*(result + list[0]*numVert + list[1]) = *(origin + list[0]*numVert + list[1]); 
+	}else if(threadIdx.x == 1){
+		*(result + list[1]*numVert + list[0]) = *(origin + list[0]*numVert + list[1]);
+	}
+}
+/*
+*
+*	Resets the and unsigned short array to all 0s. It is an overrided implementation of te resetArray Method
+*	
+*	Arguments:
+*
+*	int* array: pointer to the array where the result of the checking are
+*	int numVert: number of vertices of the adjecency matrix
+*/
+__global__ void resetResult(unsigned short * array,int numVert){
+	
+	int pos = blockIdx.x * blockDim.x + threadIdx.x;
+	
+	if(pos < numVert){
+		*(array + pos) = 0;
+	}
+	
+}//end resetArray
 /****************************************************************************************
 * End of the Extra tool methods section
 ****************************************************************************************/
@@ -426,11 +454,11 @@ __global__ void printA(int* array, int size){
 /*
 *	GPU implementation of Kruskal's algorithm multi-threaded.
 */
-void gpu(unsigned short** graph, int numVert,unsigned short result) {	
+void gpu(unsigned short** graph, int numVert,unsigned short* result) {	
 	int size = numVert * numVert;
 	int* unionMatrix;	
 	
-	int* checkArray;
+	int* checkArray; //it is where each thread reports after checking the union-find-matrix
 	
 	size_t pitch;	
 	
@@ -493,7 +521,7 @@ void gpu(unsigned short** graph, int numVert,unsigned short result) {
 	typeof(devFound) found;
 	int totalCost;
 	
-	resetArray<<<numBlocks_d,numThreads>>>(d_result,numVert*numVert); //reset resulting graph
+	resetResult<<<numBlocks_d,numThreads>>>(d_result,numVert*numVert); //reset resulting graph
 	
 	resetArray<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
 	
@@ -536,6 +564,9 @@ void gpu(unsigned short** graph, int numVert,unsigned short result) {
 			//Freaki fast union find
 			update<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert,vertList);
 			
+			//inserting edge into the resulting graph
+			insertToResult<<<1,2>>>(d_weights_original,d_result,vertList,numVert);
+			
 		}
 		
 		resetArray<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
@@ -546,9 +577,10 @@ void gpu(unsigned short** graph, int numVert,unsigned short result) {
 	
 
 	cudaMemcpyFromSymbol(&totalCost, dev_totalCost, sizeof(totalCost), 0, cudaMemcpyDeviceToHost);
+	cudaMemcpy(result,d_result, size * sizeof(unsigned short), cudaMemcpyDeviceToHost);
 	
 	printf("\n\tMinimum cost = %d\n",totalCost);
-	//cudaMemcpy((*graph),d_result, size * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+	
 	
 	cudaFree(vertList); 	
 	cudaFree(d_weights_copy);
@@ -794,10 +826,10 @@ int main(int argc, char **argv)
 	
 	
 	if(tflag){ //reporting time tricking enabled
-		printf("Time track " GRN "ENABLED\n" RESET);
+		printf("Time tracking " GRN "ENABLED\n" RESET);
 
 	}else{  //reporting time tricking disabled
-		printf("Time track " RED "DISABLED\n" RESET);
+		printf("Time tracking " RED "DISABLED\n" RESET);
 	}
 	
 	if(cflag){ //reporting CPU omission
@@ -813,9 +845,9 @@ int main(int argc, char **argv)
 	}
 	
 	if(fflag){ //reporting writing to file
-		printf("Write to file " GRN "ENABLED\n" RESET);
+		printf("Writing to file " GRN "ENABLED\n" RESET);
 	}else{
-		printf("Write to file " RED "DISABLED\n" RESET);
+		printf("Writing to file " RED "DISABLED\n" RESET);
 	}
 	
 	time_t t;
@@ -849,7 +881,7 @@ int main(int argc, char **argv)
 			gpu(&theGraph, numVert,(unsigned short*)gpuResult);
 		}
 		
-		if(fflag){
+		if(fflag){ //if the writing to a file flag is set
 			printToFile("gpuResult", (unsigned short*)gpuResult, numVert);
 		}
 	}
@@ -869,7 +901,7 @@ int main(int argc, char **argv)
 			normal((unsigned short*)theGraph,numVert,(unsigned short*)cpuResult);
 		}
 		
-		if(fflag){
+		if(fflag){ //if the writing to a file flag is set
 			printToFile("cpuResult", (unsigned short*)cpuResult, numVert);
 		}
 	}
