@@ -309,7 +309,7 @@ __global__ void resetGlobalFound(){
 *	int* array: pointer to the array where the result of the checking are
 *	int numVert: number of vertices of the adjecency matrix
 */
-__global__ void resetArrayCheck(int * array,int numVert){
+__global__ void resetArray(int * array,int numVert){
 	
 	int pos = blockIdx.x * blockDim.x + threadIdx.x;
 	
@@ -317,7 +317,7 @@ __global__ void resetArrayCheck(int * array,int numVert){
 		*(array + pos) = 0;
 	}
 	
-}//end resetArrayCheck
+}//end resetArray
 
 /****************************************************************************************
 * End of Avoiding Loops section
@@ -426,7 +426,7 @@ __global__ void printA(int* array, int size){
 /*
 *	GPU implementation of Kruskal's algorithm multi-threaded.
 */
-void gpu(unsigned short** graph, int numVert) {	
+void gpu(unsigned short** graph, int numVert,unsigned short result) {	
 	int size = numVert * numVert;
 	int* unionMatrix;	
 	
@@ -434,7 +434,9 @@ void gpu(unsigned short** graph, int numVert) {
 	
 	size_t pitch;	
 	
-	unsigned short* d_weights_original;
+	unsigned short* d_weights_original; //this is where the original graph is gonna be copied in the device
+	unsigned short* d_result; //where the resulting spanning tree is gonna be placed in the device
+	
 	int* d_weights_copy;
 	
 	int* d_order;
@@ -444,8 +446,9 @@ void gpu(unsigned short** graph, int numVert) {
 	/****************************************************************************************
 	* Alocating memory in the device
 	*****************************************************************************************/
+	cudaMalloc(&d_result, size * sizeof(unsigned short)); //Resulting graph
 	
-	cudaMalloc(&d_weights_original, size * sizeof(unsigned short)); //Array without the extra cols and rows
+	cudaMalloc(&d_weights_original, size * sizeof(unsigned short)); //graph in the device
 	cudaMalloc(&d_weights_copy, size * sizeof(int)); //Array that is gonna be used in the sort
 	
 	cudaMalloc(&d_order, size * sizeof(int));//would store a sorted array of number to keep track of the indexes to move
@@ -466,6 +469,7 @@ void gpu(unsigned short** graph, int numVert) {
 	*****************************************************************************************/
 	int numThreads = 1024;
 	int numBlocks = numVert / numThreads + 1;
+	int numBlocks_d = (numVert*numVert) / numThreads + 1;
 	
 	dim3 threadsPerBlock(30,30);
 	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
@@ -489,7 +493,9 @@ void gpu(unsigned short** graph, int numVert) {
 	typeof(devFound) found;
 	int totalCost;
 	
-	resetArrayCheck<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
+	resetArray<<<numBlocks_d,numThreads>>>(d_result,numVert*numVert); //reset resulting graph
+	
+	resetArray<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
 	
 	resetGlobalFound<<<1,1>>>(); //resseting the global found variable to 0
 	cudaCheckErrors("Reset Found fail");
@@ -532,7 +538,7 @@ void gpu(unsigned short** graph, int numVert) {
 			
 		}
 		
-		resetArrayCheck<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
+		resetArray<<<numBlocks,numThreads>>>(checkArray,numVert); //resetting the checking array to all 0s
 		resetGlobalFound<<<1,1>>>(); //resseting the global found variable to 0
 
 	
@@ -836,11 +842,15 @@ int main(int argc, char **argv)
 		if(tflag){ //traking time enabled
 			starttime();
 			
-			gpu(&theGraph, numVert);
+			gpu(&theGraph, numVert,(unsigned short*)gpuResult);
 	
 			endtime("GPU Time");
 		}else{ //tracking time disabled
-			gpu(&theGraph, numVert);
+			gpu(&theGraph, numVert,(unsigned short*)gpuResult);
+		}
+		
+		if(fflag){
+			printToFile("gpuResult", (unsigned short*)gpuResult, numVert);
 		}
 	}
 
