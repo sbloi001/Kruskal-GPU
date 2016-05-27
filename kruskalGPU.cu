@@ -684,24 +684,28 @@ void printToFile(const char* fileName, unsigned short* graphToPrint, int numVert
 	
 	printf("Writing into file...\n");
 	
-	int i,j;
+	int i,j, counter = 0;
 	unsigned short value;
 	
 	for(i = 0; i < numVert;i++){
 		for(j = i + 1; j < numVert;j++){
 			value = *(graphToPrint + i * numVert + j);
 			if(value != 0){
-				fprintf(fileToWrite,"edge (%d,%d) =%d\n",i,j,value);			
+				fprintf(fileToWrite,"edge (%d,%d) =%d\n",i,j,value);
+				counter++;
 			}
 				
 		}
 	}		
 	
 	
+	
 	if(fileToWrite){
+		fprintf(fileToWrite,"Total amount of edges inserted: %d\n",counter);
 		printf("File" CYN " %s " RESET "written successfully!\n",fileName);
+		fclose(fileToWrite);
 	}
-	fclose(fileToWrite);
+	
 }
 
 
