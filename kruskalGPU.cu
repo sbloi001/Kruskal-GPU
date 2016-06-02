@@ -379,11 +379,9 @@ __global__ void copyingGraphs(unsigned short* source, int* dest, int size){
 *	int* list: Mainly a size 2 array with the 2 vertice numbers to get the weight of the edge between them.
 *	int numVert: number of vertices of the adjecency matrix
 */
-__global__ void addToMinWeight(unsigned short* original,int* list, int numVert){
-	int row = *(list + 0);
-	int col = *(list + 1);
+__global__ void addToMinWeight(int* original,int pos){
 	
-	int weight = *(original + row * numVert + col);
+	int weight = *(original + pos);
 	
 	dev_totalCost += weight;
 }//end addToMinWeight
@@ -392,7 +390,7 @@ __global__ void addToMinWeight(unsigned short* original,int* list, int numVert){
 /*
 *	This method retrieves the column and row of 
 */
-__global__ void getValue(unsigned short* original,int* ordered, int * list,int pos, int numVert){
+__global__ void getValue(int* ordered, int * list,int pos, int numVert){
 	int index = *(ordered + pos);
 	int row = index / numVert;
 	int col = index % numVert;
@@ -421,11 +419,11 @@ __global__ void printA(int* array, int size){
 /*
 * 	Inserts edge back into the result graph
 */
-__global__ void insertToResult(unsigned short* origin, unsigned short* result, int* list, int numVert){
+__global__ void insertToResult(int* origin, unsigned short* result, int* list, int numVert,int pos){
 	if(threadIdx.x == 0){
-		*(result + list[0]*numVert + list[1]) = *(origin + list[0]*numVert + list[1]); 
+		*(result + list[0]*numVert + list[1]) = (unsigned short)*(origin + pos); 
 	}else if(threadIdx.x == 1){
-		*(result + list[1]*numVert + list[0]) = *(origin + list[0]*numVert + list[1]);
+		*(result + list[1]*numVert + list[0]) = (unsigned short)*(origin + pos);
 	}
 }
 /*
@@ -474,7 +472,6 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 	/****************************************************************************************
 	* Alocating memory in the device
 	*****************************************************************************************/
-	cudaMalloc(&d_result, size * sizeof(unsigned short)); //Resulting graph
 	
 	cudaMalloc(&d_weights_original, size * sizeof(unsigned short)); //graph in the device
 	cudaMalloc(&d_weights_copy, size * sizeof(int)); //Array that is gonna be used in the sort
@@ -509,6 +506,12 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 	cudaCheckErrors("Copying arrays fail");
 	
 	/****************************************************************************************
+	* Optimizing space
+	*****************************************************************************************/
+	cudaFree(d_weights_original);
+	
+	cudaMalloc(&d_result, size * sizeof(unsigned short)); //Resulting graph
+	/****************************************************************************************
 	* Sorting Section
 	*****************************************************************************************/
 
@@ -535,7 +538,7 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 	int counter = 0;
 	
 	for(j = 0;(j < size) && (counter < numVert - 1);j++){ //if we got the min spaming tree
-		getValue<<<1,1>>>(d_weights_original, d_order, vertList,j,numVert);
+		getValue<<<1,1>>>(d_order, vertList,j,numVert);
 		
 		//checking if those vertices are not in any set
 		checkSet<<<numBlocks,numThreads>>>(unionMatrix,checkArray,pitch,numVert,vertList);
@@ -551,7 +554,7 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 		if(found == 0){
 				
 			//insertResultingEdge<<<numBlocks,numThreads>>>(d_edges,d_resultEdges,counter,j);
-			addToMinWeight<<<1,1>>>(d_weights_original,vertList,numVert);
+			addToMinWeight<<<1,1>>>(d_weights_copy,j);
 			
 			counter++;
 
@@ -565,7 +568,7 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 			update<<<numBlocks2D,threadsPerBlock>>>(unionMatrix,pitch,numVert,vertList);
 			
 			//inserting edge into the resulting graph
-			insertToResult<<<1,2>>>(d_weights_original,d_result,vertList,numVert);
+			insertToResult<<<1,2>>>(d_weights_copy,d_result,vertList,numVert,j);
 			
 		}
 		
@@ -584,7 +587,7 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 	
 	cudaFree(vertList); 	
 	cudaFree(d_weights_copy);
-	//cudaFree(d_result);
+	cudaFree(d_result);
 	cudaFree(d_order);
 	cudaFree(checkArray);
 	cudaFree(unionMatrix);
