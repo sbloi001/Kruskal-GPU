@@ -499,7 +499,7 @@ void gpu(unsigned short** graph, int numVert,unsigned short* result) {
 	int numBlocks = numVert / numThreads + 1;
 	int numBlocks_d = (numVert*numVert) / numThreads + 1;
 	
-	dim3 threadsPerBlock(30,30);
+	dim3 threadsPerBlock(32,32);
 	dim3 numBlocks2D(numVert/threadsPerBlock.x + 1,numVert/threadsPerBlock.y + 1);
 	
 	fillOrder<<<size/numThreads + 1,numThreads>>>(d_order,size,numVert);
